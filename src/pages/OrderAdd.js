@@ -67,9 +67,9 @@ function OrderAdd({ onBack }) {
     };
 
     return (
-        <div style={{ padding: '20px', backgroundColor: '#fff', height: '100%', boxSizing: 'border-box', overflowY: 'auto' }}>
-            <div onClick={onBack} style={{ cursor: 'pointer', color: '#6366f1', marginBottom: '20px' }}>⬅ <strong>Kembali</strong></div>
-            <h2 style={{ fontSize: '22px', marginBottom: '20px' }}>Tambah Order Baru</h2>
+        <div style={styles.container}>
+            <div onClick={onBack} style={styles.backBtn}>⬅ <strong>Kembali</strong></div>
+            <h2 style={{ fontSize: '22px', marginBottom: '20px', color: '#04CDCD' }}>Tambah Order Baru</h2>
 
             <div style={{ marginBottom: '16px' }}>
                 <label style={styles.label}>Nama Customer</label>
@@ -99,7 +99,7 @@ function OrderAdd({ onBack }) {
                     <select value={statusOrder} onChange={(e) => setStatusOrder(e.target.value)} style={styles.input}>
                         <option value="Waiting List">Waiting List</option>
                         <option value="Sudah Dicuci">Sudah Dicuci</option>
-                        <option value="Ready Anter">Ready Anter</option>
+                        <option value="Ready Anter">Ready</option>
                     </select>
                 </div>
             </div>
@@ -123,11 +123,13 @@ function OrderAdd({ onBack }) {
 }
 
 const styles = {
-    input: { width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box', fontSize: '16px', height: '48px', backgroundColor: '#fff', WebkitAppearance: 'none', appearance: 'none', display: 'block' },
+    container: { padding: '20px', backgroundColor: '#fff', height: '100%', boxSizing: 'border-box', overflowY: 'auto', fontFamily: 'Inter, sans-serif' },
+    backBtn: { cursor: 'pointer', color: '#04CDCD', marginBottom: '20px' },
+    input: { width: '100%', padding: '12px', borderRadius: '10px', border: '2px solid #e2e8f0', boxSizing: 'border-box', fontSize: '15px', height: '48px', outlineColor: '#04CDCD' },
     label: { display: 'block', fontSize: '14px', fontWeight: '600', marginBottom: '6px', color: '#475569' },
     itemRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', border: '1px solid #f1f5f9', borderRadius: '10px', marginBottom: '10px', backgroundColor: '#f8fafc' },
-    btn: { width: '35px', height: '35px', borderRadius: '8px', border: 'none', backgroundColor: '#6366f1', color: '#fff', cursor: 'pointer', fontSize: '18px' },
-    saveBtn: { width: '100%', padding: '16px', borderRadius: '10px', border: 'none', backgroundColor: '#6366f1', color: '#fff', fontSize: '16px', fontWeight: 'bold', marginTop: '20px', cursor: 'pointer' }
+    btn: { width: '35px', height: '35px', borderRadius: '8px', border: 'none', backgroundColor: '#04CDCD', color: '#fff', cursor: 'pointer', fontSize: '18px', fontWeight: 'bold' },
+    saveBtn: { width: '100%', padding: '16px', borderRadius: '10px', border: 'none', backgroundColor: '#04CDCD', color: '#fff', fontSize: '16px', fontWeight: 'bold', marginTop: '20px', cursor: 'pointer', boxShadow: '0 4px 6px rgba(4, 205, 205, 0.2)' }
 };
 
 export default OrderAdd;

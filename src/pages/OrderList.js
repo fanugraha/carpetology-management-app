@@ -8,7 +8,6 @@ function OrderList({ orders, searchQuery, setSearchQuery, activeFilter, setActiv
     const { user } = useAuth();
     const [sortBy, setSortBy] = useState('urgent');
 
-    // Perhitungan total order aktif (selain 'Ready Anter')
     const totalOrderAktif = (orders || []).filter(o => o.status !== 'Ready Anter').length;
 
     const getAgeInDays = (tglStr) => {
@@ -36,7 +35,7 @@ function OrderList({ orders, searchQuery, setSearchQuery, activeFilter, setActiv
     return (
         <div style={styles.container}>
             <div style={styles.header}>
-                <h3 style={{ margin: 0 }}>Carpetology</h3>
+                <h3 style={{ margin: 0, color: '#04CDCD' }}>Carpetology Admin</h3>
                 <button onClick={() => signOut(auth)} style={styles.logoutBtn}>Logout</button>
             </div>
 
@@ -62,7 +61,6 @@ function OrderList({ orders, searchQuery, setSearchQuery, activeFilter, setActiv
                 </div>
             </div>
 
-            {/* STATISTIK TOTAL ORDER */}
             <div style={styles.statsBar}>
                 Total Order Belum Selesai: <strong>{totalOrderAktif} Order</strong>
             </div>
@@ -83,6 +81,7 @@ function OrderList({ orders, searchQuery, setSearchQuery, activeFilter, setActiv
 
             <button style={styles.fab} onClick={onAddClick}>+</button>
 
+            {/* Navbar Admin/Staff */}
             {(user?.role === 'admin' || user?.role === 'Admin') && (
                 <div style={styles.bottomNav}>
                     <div style={styles.navActive}>🏠<br />Orders</div>
@@ -95,25 +94,24 @@ function OrderList({ orders, searchQuery, setSearchQuery, activeFilter, setActiv
 }
 
 const styles = {
-    container: { display: 'flex', flexDirection: 'column', height: '100%', position: 'relative', backgroundColor: '#fff' },
+    container: { display: 'flex', flexDirection: 'column', height: '100vh', position: 'relative', backgroundColor: '#fff' },
     header: { padding: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
     logoutBtn: { fontSize: '12px', border: 'none', background: 'none', color: '#ef4444', cursor: 'pointer' },
     searchWrapper: { display: 'flex', alignItems: 'center', border: '1px solid #e2e8f0', borderRadius: '25px', padding: '8px 16px', margin: '0 16px 4px 16px' },
     searchInput: { border: 'none', outline: 'none', flex: 1, marginLeft: '8px', fontSize: '15px' },
     filterGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', padding: '4px 16px' },
     filterBtn: { padding: '8px 4px', borderRadius: '8px', border: '1px solid #e2e8f0', backgroundColor: '#fff', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' },
-    filterActive: { backgroundColor: '#6366f1', color: '#fff', borderColor: '#6366f1' },
+    filterActive: { backgroundColor: '#04CDCD', color: '#fff', borderColor: '#04CDCD' },
     sortContainer: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 16px', backgroundColor: '#f8fafc', marginTop: '6px' },
-    // Tambahan style untuk statsBar
     statsBar: { padding: '8px 16px', backgroundColor: '#eff6ff', color: '#1e40af', fontSize: '12px', textAlign: 'center', borderBottom: '1px solid #dbeafe' },
     toggleGroup: { display: 'flex', gap: '4px' },
     toggleBtn: { padding: '5px 8px', fontSize: '11px', borderRadius: '6px', border: '1px solid #cbd5e1', cursor: 'pointer' },
     toggleActive: { backgroundColor: '#1e293b', color: '#fff' },
     tableHeader: { display: 'flex', backgroundColor: '#f1f5f9', padding: '8px 16px', fontSize: '13px', color: '#64748b', fontWeight: '600' },
     listContainer: { flex: 1, overflowY: 'auto', paddingBottom: '80px' },
-    fab: { position: 'absolute', bottom: '80px', right: '20px', width: '56px', height: '56px', borderRadius: '50%', backgroundColor: '#6366f1', color: '#fff', border: 'none', fontSize: '28px', boxShadow: '0 4px 10px rgba(99, 102, 241, 0.4)', cursor: 'pointer', zIndex: 10 },
+    fab: { position: 'absolute', bottom: '80px', right: '20px', width: '56px', height: '56px', borderRadius: '50%', backgroundColor: '#04CDCD', color: '#fff', border: 'none', fontSize: '28px', boxShadow: '0 4px 10px rgba(4, 205, 205, 0.4)', cursor: 'pointer', zIndex: 10 },
     bottomNav: { position: 'absolute', bottom: 0, width: '100%', height: '60px', display: 'flex', justifyContent: 'space-around', alignItems: 'center', borderTop: '1px solid #e2e8f0', backgroundColor: '#fff', zIndex: 10 },
-    navActive: { color: '#6366f1', fontSize: '11px', textAlign: 'center', fontWeight: 'bold' },
+    navActive: { color: '#04CDCD', fontSize: '11px', textAlign: 'center', fontWeight: 'bold' },
     navItem: { color: '#94a3b8', fontSize: '11px', textAlign: 'center' }
 };
 

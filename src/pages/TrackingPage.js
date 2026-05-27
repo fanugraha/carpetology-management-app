@@ -16,7 +16,6 @@ function TrackingPage() {
         return () => unsubscribe();
     }, []);
 
-    // Fungsi menghitung estimasi selesai
     const calculateEstimasi = (tglMasukStr) => {
         if (!tglMasukStr) return '-';
         const bulanIndo = { 'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'Mei': 4, 'Jun': 5, 'Jul': 6, 'Ags': 7, 'Sep': 8, 'Okt': 9, 'Nov': 10, 'Des': 11 };
@@ -28,17 +27,15 @@ function TrackingPage() {
         return tglSelesai.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
     };
 
-    // Fungsi untuk memproses label status
     const formatStatus = (status) => {
         return status === 'Ready Anter' ? 'Ready' : status;
     };
 
-    // Fungsi warna status sesuai permintaan
     const getStatusStyles = (status) => {
         switch (status) {
-            case 'Ready Anter': return { bg: '#dcfce7', text: '#15803d', border: '#bbf7d0' }; // Hijau
-            case 'Sudah Dicuci': return { bg: '#fef3c7', text: '#b45309', border: '#fde68a' }; // Kuning
-            case 'Waiting List': return { bg: '#f1f5f9', text: '#64748b', border: '#e2e8f0' }; // Abu
+            case 'Ready Anter': return { bg: '#dcfce7', text: '#15803d', border: '#bbf7d0' };
+            case 'Sudah Dicuci': return { bg: '#fef3c7', text: '#b45309', border: '#fde68a' };
+            case 'Waiting List': return { bg: '#f1f5f9', text: '#64748b', border: '#e2e8f0' };
             default: return { bg: '#f1f5f9', text: '#475569', border: '#e2e8f0' };
         }
     };
@@ -74,11 +71,18 @@ function TrackingPage() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {filteredOrders.map((order) => {
+                                {filteredOrders.map((order, index) => {
                                     const s = getStatusStyles(order.status);
                                     const estimasi = calculateEstimasi(order.tanggal);
+                                    
+                                    // Zebra Striping: Putih untuk genap, abu tipis untuk ganjil
+                                    const rowStyle = {
+                                        ...styles.trBody,
+                                        backgroundColor: index % 2 === 0 ? '#ffffff' : '#f8fafc'
+                                    };
+
                                     return (
-                                        <tr key={order.id} style={styles.trBody}>
+                                        <tr key={order.id} style={rowStyle}>
                                             <td style={styles.tdName}>{order.nama}</td>
                                             <td style={styles.td}>{order.tanggal || '-'}</td>
                                             <td style={styles.td}>{estimasi}</td>
