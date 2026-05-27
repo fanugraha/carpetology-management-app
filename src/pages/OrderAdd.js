@@ -33,7 +33,7 @@ function OrderAdd({ onBack }) {
 
     const handleSubmit = async () => {
         if (!nama.trim() || !hp.trim()) return alert("Nama dan HP wajib diisi!");
-        
+
         const itemsSelected = [];
         if (quantities.karpet > 0) itemsSelected.push({ nama: `${quantities.karpet} Karpet` });
         if (quantities.springbed > 0) itemsSelected.push({ nama: `${quantities.springbed} Springbed` });

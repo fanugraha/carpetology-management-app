@@ -28,13 +28,13 @@ export const AuthProvider = ({ children }) => {
                 // 1. Tambahkan listener agar auto-logout bekerja
                 window.addEventListener('mousemove', resetTimer);
                 window.addEventListener('keypress', resetTimer);
-                resetTimer(); 
+                resetTimer();
 
                 try {
                     // 2. Mengambil data dari koleksi 'user' (sesuai screenshot Anda)
                     const userDoc = await getDoc(doc(db, "user", currentUser.uid));
                     const role = userDoc.exists() ? userDoc.data().role : 'staff';
-                    
+
                     setUser({ ...currentUser, role: role });
                 } catch (e) {
                     console.error("Gagal ambil role:", e);
