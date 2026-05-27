@@ -3,17 +3,15 @@ import { collection, addDoc } from "firebase/firestore";
 import { db } from '../firebase';
 
 function OrderAdd({ onBack }) {
+    const getTodayDate = () => new Date().toISOString().split('T')[0];
+
     const [nama, setNama] = useState('');
     const [hp, setHp] = useState('');
     const [statusBayar, setStatusBayar] = useState('Belum Lunas');
     const [statusOrder, setStatusOrder] = useState('Waiting List');
+    const [tanggal, setTanggal] = useState(getTodayDate());
     const [isLoading, setIsLoading] = useState(false);
-
-    const [quantities, setQuantities] = useState({
-        karpet: 0,
-        springbed: 0,
-        sofa: 0
-    });
+    const [quantities, setQuantities] = useState({ karpet: 0, springbed: 0, sofa: 0 });
 
     const handleQtyChange = (item, type) => {
         setQuantities(prev => ({
@@ -22,94 +20,114 @@ function OrderAdd({ onBack }) {
         }));
     };
 
-    const handleSubmit = async () => {
-        if (!nama.trim() || !hp.trim()) {
-            alert("Nama Pelanggan dan Nomor HP harus diisi!");
-            return;
+    const handleDateChange = (e) => {
+        const selected = e.target.value;
+        const today = getTodayDate();
+        if (selected > today) {
+            alert("⚠️ Tanggal tidak boleh di masa depan!");
+            setTanggal(today);
+        } else {
+            setTanggal(selected);
         }
+    };
 
+    const handleSubmit = async () => {
+        if (!nama.trim() || !hp.trim()) return alert("Nama dan HP wajib diisi!");
+        
         const itemsSelected = [];
         if (quantities.karpet > 0) itemsSelected.push({ nama: `${quantities.karpet} Karpet` });
         if (quantities.springbed > 0) itemsSelected.push({ nama: `${quantities.springbed} Springbed` });
         if (quantities.sofa > 0) itemsSelected.push({ nama: `${quantities.sofa} Sofa` });
 
-        if (itemsSelected.length === 0) {
-            alert("Pilih minimal 1 item laundry terlebih dahulu!");
-            return;
-        }
+        if (itemsSelected.length === 0) return alert("Pilih minimal 1 item!");
 
-        const totalString = itemsSelected.map(i => i.nama).join(', ');
+        const [tahun, bulan, hari] = tanggal.split('-').map(Number);
+        const cleanDate = new Date(tahun, bulan - 1, hari);
+        const formattedDate = cleanDate.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
 
         try {
             setIsLoading(true);
-
-            // --- SIMPAN KE FIRESTORE ---
             await addDoc(collection(db, "orders"), {
                 nama: nama.trim(),
                 hp: hp.trim(),
                 status: statusOrder,
                 statusBayar: statusBayar,
-                total: totalString,
+                total: itemsSelected.map(i => i.nama).join(', '),
                 items: itemsSelected,
-                tanggal: new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }),
-                waktu: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+                tanggal: formattedDate,
+                timestamp: cleanDate
             });
-
-            alert("🎉 Order baru berhasil disimpan ke Firebase!");
+            alert("🎉 Order berhasil disimpan!");
             onBack();
         } catch (error) {
-            console.error("Gagal simpan:", error);
-            alert("Gagal menyimpan ke Firebase: " + error.message);
+            alert("Gagal: " + error.message);
         } finally {
             setIsLoading(false);
         }
     };
 
     return (
-        <div style={{ padding: '20px', backgroundColor: '#fff', height: '100%', boxSizing: 'border-box', overflowY: 'auto', position: 'relative' }}>
-            
-            {/* Animasi Loading */}
-            <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
-            {isLoading && (
-                <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(255, 255, 255, 0.8)', zIndex: 99, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
-                    <div style={{ width: '40px', height: '40px', border: '4px solid #f3f3f3', borderTop: '4px solid #6366f1', borderRadius: '50%', animation: 'spin 1s linear infinite', marginBottom: '12px' }}></div>
-                    <strong>Menyimpan ke Firebase...</strong>
-                </div>
-            )}
-
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '24px', cursor: 'pointer', color: '#6366f1' }} onClick={onBack}>
-                ⬅ <strong>Kembali</strong>
-            </div>
-
-            <h2 style={{ fontSize: '22px', marginBottom: '20px', color: '#1e293b' }}>Tambah Order Baru</h2>
+        <div style={{ padding: '20px', backgroundColor: '#fff', height: '100%', boxSizing: 'border-box', overflowY: 'auto' }}>
+            <div onClick={onBack} style={{ cursor: 'pointer', color: '#6366f1', marginBottom: '20px' }}>⬅ <strong>Kembali</strong></div>
+            <h2 style={{ fontSize: '22px', marginBottom: '20px' }}>Tambah Order Baru</h2>
 
             <div style={{ marginBottom: '16px' }}>
-                <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', marginBottom: '6px' }}>Nama Customer</label>
-                <input type="text" value={nama} onChange={(e) => setNama(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
+                <label style={styles.label}>Nama Customer</label>
+                <input type="text" value={nama} onChange={(e) => setNama(e.target.value)} style={styles.input} />
             </div>
 
-            <div style={{ marginBottom: '20px' }}>
-                <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', marginBottom: '6px' }}>Nomor Hp</label>
-                <input type="text" value={hp} onChange={(e) => setHp(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
+            <div style={{ marginBottom: '16px' }}>
+                <label style={styles.label}>Nomor Hp</label>
+                <input type="text" value={hp} onChange={(e) => setHp(e.target.value)} style={styles.input} />
             </div>
 
-            <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', marginBottom: '10px' }}>Pilih Item</label>
+            <div style={{ marginBottom: '16px' }}>
+                <label style={styles.label}>Tanggal Masuk</label>
+                <input type="date" value={tanggal} onChange={handleDateChange} max={getTodayDate()} style={styles.input} />
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+                <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: '12px', fontWeight: 'bold' }}>Status Bayar</label>
+                    <select value={statusBayar} onChange={(e) => setStatusBayar(e.target.value)} style={styles.input}>
+                        <option value="Belum Lunas">Belum Lunas</option>
+                        <option value="Lunas">Lunas</option>
+                    </select>
+                </div>
+                <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: '12px', fontWeight: 'bold' }}>Status Order</label>
+                    <select value={statusOrder} onChange={(e) => setStatusOrder(e.target.value)} style={styles.input}>
+                        <option value="Waiting List">Waiting List</option>
+                        <option value="Sudah Dicuci">Sudah Dicuci</option>
+                        <option value="Ready Anter">Ready Anter</option>
+                    </select>
+                </div>
+            </div>
+
             {['karpet', 'springbed', 'sofa'].map((item) => (
-                <div key={item} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', border: '1px solid #f1f5f9', borderRadius: '10px', marginBottom: '10px', backgroundColor: '#f8fafc' }}>
+                <div key={item} style={styles.itemRow}>
                     <strong style={{ textTransform: 'capitalize' }}>{item}</strong>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <button onClick={() => handleQtyChange(item, 'dec')} style={{ width: '30px', height: '30px', borderRadius: '6px', border: 'none', backgroundColor: '#6366f1', color: '#fff' }}>-</button>
+                        <button onClick={() => handleQtyChange(item, 'dec')} style={styles.btn}>-</button>
                         <strong style={{ minWidth: '20px', textAlign: 'center' }}>{quantities[item]}</strong>
-                        <button onClick={() => handleQtyChange(item, 'inc')} style={{ width: '30px', height: '30px', borderRadius: '6px', border: 'none', backgroundColor: '#6366f1', color: '#fff' }}>+</button>
+                        <button onClick={() => handleQtyChange(item, 'inc')} style={styles.btn}>+</button>
                     </div>
                 </div>
             ))}
 
-            <button onClick={handleSubmit} style={{ width: '100%', padding: '14px', borderRadius: '10px', border: 'none', backgroundColor: '#6366f1', color: '#fff', fontSize: '16px', fontWeight: 'bold', marginTop: '20px', cursor: 'pointer' }}>
-                Simpan Order
+            <button onClick={handleSubmit} disabled={isLoading} style={styles.saveBtn}>
+                {isLoading ? "Menyimpan..." : "Simpan Order"}
             </button>
         </div>
     );
 }
+
+const styles = {
+    input: { width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box', fontSize: '16px', height: '48px', backgroundColor: '#fff', WebkitAppearance: 'none', appearance: 'none', display: 'block' },
+    label: { display: 'block', fontSize: '14px', fontWeight: '600', marginBottom: '6px', color: '#475569' },
+    itemRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', border: '1px solid #f1f5f9', borderRadius: '10px', marginBottom: '10px', backgroundColor: '#f8fafc' },
+    btn: { width: '35px', height: '35px', borderRadius: '8px', border: 'none', backgroundColor: '#6366f1', color: '#fff', cursor: 'pointer', fontSize: '18px' },
+    saveBtn: { width: '100%', padding: '16px', borderRadius: '10px', border: 'none', backgroundColor: '#6366f1', color: '#fff', fontSize: '16px', fontWeight: 'bold', marginTop: '20px', cursor: 'pointer' }
+};
 
 export default OrderAdd;

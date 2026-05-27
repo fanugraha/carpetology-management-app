@@ -54,7 +54,8 @@ const styles = {
     container: { padding: '20px', backgroundColor: '#f8fafc', height: '100%', position: 'relative', boxSizing: 'border-box' },
     backBtn: { border: 'none', background: 'none', color: '#6366f1', cursor: 'pointer', marginBottom: '20px', fontSize: '14px', fontWeight: '500', padding: 0 },
     card: { backgroundColor: '#fff', padding: '20px', borderRadius: '16px', border: '1px solid #f1f5f9' },
-    cardHeader: { display: 'flex', justifycontent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid #f1f5f9', paddingBottom: '14px', marginBottom: '14px' },
+    // TYPO DIPERBAIKI: justifycontent -> justifyContent
+    cardHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid #f1f5f9', paddingBottom: '14px', marginBottom: '14px' },
     customerName: { margin: 0, fontSize: '18px', fontWeight: 'bold', color: '#1e293b' },
     customerPhone: { color: '#64748b', fontSize: '13px', display: 'block', marginTop: '2px' },
     dateWrapper: { textAlign: 'right', flex: 1 },
