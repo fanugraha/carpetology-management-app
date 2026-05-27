@@ -36,3 +36,11 @@
     transform: rotate(360deg);
   }
 }
+
+@keyframes pulseBg {
+  0% { opacity: 0.04; }
+  50% { opacity: 0.12; }
+  100% { opacity: 0.04; }
+}
+
+/* Animasi otomatis aktif menyatu dengan logika warna inline React */
