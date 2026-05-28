@@ -3,11 +3,21 @@ import React from 'react';
 function OrderDetail({ order, onBack, onEditClick, onDeleteClick }) {
     if (!order) return null;
 
-    // Fungsi warna badge status yang konsisten
+    // Fungsi untuk memastikan tanggal selalu berupa string
+    const formatTimestamp = (val) => {
+        if (!val) return "-";
+        if (typeof val === 'object' && val.seconds) {
+            return new Date(val.seconds * 1000).toLocaleDateString('id-ID', { 
+                day: '2-digit', month: 'short', year: 'numeric' 
+            });
+        }
+        return val;
+    };
+
     const getBadgeColor = (status) => {
-        if (status === 'Ready Anter') return '#22c55e'; // Hijau
-        if (status === 'Sudah Dicuci') return '#f59e0b'; // Kuning
-        return '#94a3b8'; // Waiting List = Abu-abu
+        if (status === 'Ready Anter') return '#22c55e';
+        if (status === 'Sudah Dicuci') return '#f59e0b';
+        return '#94a3b8';
     };
 
     return (
@@ -21,8 +31,8 @@ function OrderDetail({ order, onBack, onEditClick, onDeleteClick }) {
                         <small style={styles.customerPhone}>{order.hp}</small>
                     </div>
                     <div style={styles.dateWrapper}>
-                        <small style={styles.timeText}>{order.waktu}</small>
-                        <small style={styles.dateText}>{order.tanggal}</small>
+                        <small style={styles.timeText}>{formatTimestamp(order.waktu)}</small>
+                        <small style={styles.dateText}>{formatTimestamp(order.tanggal)}</small>
                     </div>
                 </div>
 

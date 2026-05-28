@@ -9,6 +9,7 @@ function OrderEdit({ order, onBack, onSaveSuccess }) {
   const [statusOrder, setStatusOrder] = useState(order?.status || 'Waiting List');
   const [isLoading, setIsLoading] = useState(false);
 
+  // Parsing data item dari string 'total' yang tersimpan di Firestore
   const parseInitialQty = (itemNama) => {
     if (!order?.total) return 0;
     const match = order.total.toLowerCase().match(new RegExp(`(\\d+)\\s*${itemNama}`));
@@ -46,8 +47,6 @@ function OrderEdit({ order, onBack, onSaveSuccess }) {
 
     if (!window.confirm("Simpan perubahan pada order ini?")) return;
 
-    const totalString = itemsSelected.map(i => i.nama).join(', ');
-
     try {
       setIsLoading(true);
       const orderRef = doc(db, "orders", order.id);
@@ -56,13 +55,16 @@ function OrderEdit({ order, onBack, onSaveSuccess }) {
         hp: hp.trim(),
         status: statusOrder,
         statusBayar: statusBayar,
-        total: totalString,
+        total: itemsSelected.map(i => i.nama).join(', '),
         items: itemsSelected
       });
 
       alert("✅ Data berhasil diperbarui!");
-      onSaveSuccess({ ...order, nama: nama.trim(), hp: hp.trim(), status: statusOrder, statusBayar: statusBayar, total: totalString, items: itemsSelected });
-      onBack();
+
+      // Navigasi dilakukan oleh fungsi ini, tanpa memanggil onBack() lagi
+      if (typeof onSaveSuccess === 'function') {
+        onSaveSuccess();
+      }
     } catch (error) {
       alert("Gagal memperbarui data: " + error.message);
     } finally {

@@ -83,7 +83,13 @@ function OrderAdd({ onBack }) {
 
             <div style={{ marginBottom: '16px' }}>
                 <label style={styles.label}>Tanggal Masuk</label>
-                <input type="date" value={tanggal} onChange={handleDateChange} max={getTodayDate()} style={styles.input} />
+                <input
+                    type="date"
+                    value={tanggal}
+                    onChange={handleDateChange}
+                    max={getTodayDate()}
+                    style={styles.dateInput} // Gunakan style khusus date agar tidak pecah
+                />
             </div>
 
             <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
@@ -123,13 +129,93 @@ function OrderAdd({ onBack }) {
 }
 
 const styles = {
-    container: { padding: '20px', backgroundColor: '#fff', height: '100%', boxSizing: 'border-box', overflowY: 'auto', fontFamily: 'Inter, sans-serif' },
-    backBtn: { cursor: 'pointer', color: '#04CDCD', marginBottom: '20px' },
-    input: { width: '100%', padding: '12px', borderRadius: '10px', border: '2px solid #e2e8f0', boxSizing: 'border-box', fontSize: '15px', height: '48px', outlineColor: '#04CDCD' },
-    label: { display: 'block', fontSize: '14px', fontWeight: '600', marginBottom: '6px', color: '#475569' },
-    itemRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', border: '1px solid #f1f5f9', borderRadius: '10px', marginBottom: '10px', backgroundColor: '#f8fafc' },
-    btn: { width: '35px', height: '35px', borderRadius: '8px', border: 'none', backgroundColor: '#04CDCD', color: '#fff', cursor: 'pointer', fontSize: '18px', fontWeight: 'bold' },
-    saveBtn: { width: '100%', padding: '16px', borderRadius: '10px', border: 'none', backgroundColor: '#04CDCD', color: '#fff', fontSize: '16px', fontWeight: 'bold', marginTop: '20px', cursor: 'pointer', boxShadow: '0 4px 6px rgba(4, 205, 205, 0.2)' }
+    container: {
+        padding: '20px',
+        backgroundColor: '#fff',
+        minHeight: '100vh',
+        boxSizing: 'border-box', // Penting
+        overflowX: 'hidden',    // Mencegah overflow horizontal
+        fontFamily: 'Inter, sans-serif',
+        display: 'flex',
+        flexDirection: 'column'
+    },
+    backBtn: {
+        cursor: 'pointer',
+        color: '#04CDCD',
+        marginBottom: '20px',
+        display: 'flex',
+        alignItems: 'center'
+    },
+    input: {
+        width: '100%',
+        padding: '12px',
+        borderRadius: '10px',
+        border: '2px solid #e2e8f0',
+        boxSizing: 'border-box', // Mencegah padding menambah lebar elemen
+        fontSize: '16px',        // iOS sering zoom jika font < 16px
+        height: '48px',
+        outline: 'none',
+        WebkitAppearance: 'none', // WAJIB untuk iOS
+        appearance: 'none'
+    },
+    dateInput: {
+        width: '100%',
+        padding: '12px',
+        borderRadius: '10px',
+        border: '2px solid #e2e8f0',
+        boxSizing: 'border-box',
+        fontSize: '16px',        // Samakan dengan input lain
+        height: '48px',
+        backgroundColor: '#fff',
+        color: '#333',
+        WebkitAppearance: 'none'
+    },
+    label: {
+        display: 'block',
+        fontSize: '14px',
+        fontWeight: '600',
+        marginBottom: '6px',
+        color: '#475569'
+    },
+    itemRow: {
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: '12px',
+        border: '1px solid #f1f5f9',
+        borderRadius: '10px',
+        marginBottom: '10px',
+        backgroundColor: '#f8fafc',
+        width: '100%',
+        boxSizing: 'border-box' // Penting agar tidak melebihi layar
+    },
+    btn: {
+        width: '40px', // Sedikit diperbesar agar nyaman untuk jempol
+        height: '40px',
+        borderRadius: '8px',
+        border: 'none',
+        backgroundColor: '#04CDCD',
+        color: '#fff',
+        cursor: 'pointer',
+        fontSize: '18px',
+        fontWeight: 'bold',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
+    },
+    saveBtn: {
+        width: '100%',
+        padding: '16px',
+        borderRadius: '10px',
+        border: 'none',
+        backgroundColor: '#04CDCD',
+        color: '#fff',
+        fontSize: '16px',
+        fontWeight: 'bold',
+        marginTop: '20px',
+        marginBottom: '40px', // Tambahan ruang agar tombol tidak menempel di bawah layar
+        cursor: 'pointer',
+        boxShadow: '0 4px 6px rgba(4, 205, 205, 0.2)'
+    }
 };
-
 export default OrderAdd;

@@ -8,25 +8,21 @@ import DashboardWrapper from './componets/DashboardWrapper';
 function App() {
   const { user } = useAuth();
 
-  const AdminRoute = ({ children }) => {
-    return user ? children : <Navigate to="/admin-login" />;
-  };
-
   return (
-    // Hapus style={styles.appContainer}
-    <div className="app-container"> 
+    <div className="app-container">
       <Router>
         <Routes>
           <Route path="/" element={<TrackingPage />} />
           <Route path="/admin-login" element={<Login />} />
-          <Route path="/admin" element={
-            <AdminRoute>
-              <DashboardWrapper />
-            </AdminRoute>
+
+          {/* Wildcard * memastikan /admin/detail, /admin/tambah dll tercover */}
+          <Route path="/admin/*" element={
+            user ? <DashboardWrapper /> : <Navigate to="/admin-login" />
           } />
         </Routes>
       </Router>
     </div>
   );
 }
+
 export default App;

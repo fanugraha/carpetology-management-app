@@ -23,25 +23,19 @@ export const AuthProvider = ({ children }) => {
         };
 
         const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
-            setLoading(true); // Pastikan loading saat proses berlangsung
             if (currentUser) {
-                // 1. Tambahkan listener agar auto-logout bekerja
                 window.addEventListener('mousemove', resetTimer);
                 window.addEventListener('keypress', resetTimer);
                 resetTimer();
 
                 try {
-                    // 2. Mengambil data dari koleksi 'user' (sesuai screenshot Anda)
                     const userDoc = await getDoc(doc(db, "user", currentUser.uid));
                     const role = userDoc.exists() ? userDoc.data().role : 'staff';
-
                     setUser({ ...currentUser, role: role });
                 } catch (e) {
-                    console.error("Gagal ambil role:", e);
                     setUser({ ...currentUser, role: 'staff' });
                 }
             } else {
-                // 3. Bersihkan listener saat logout
                 window.removeEventListener('mousemove', resetTimer);
                 window.removeEventListener('keypress', resetTimer);
                 clearTimeout(timeout);
@@ -60,7 +54,14 @@ export const AuthProvider = ({ children }) => {
 
     return (
         <AuthContext.Provider value={{ user, loading }}>
-            {!loading && children}
+            {/* Tampilkan overlay loading tanpa menghapus children */}
+            {loading ? (
+                <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    Memuat sistem...
+                </div>
+            ) : (
+                children
+            )}
         </AuthContext.Provider>
     );
 };
