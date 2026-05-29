@@ -13,6 +13,14 @@ function OrderAdd({ onBack }) {
     const [isLoading, setIsLoading] = useState(false);
     const [quantities, setQuantities] = useState({ karpet: 0, springbed: 0, sofa: 0 });
 
+    const toTitleCase = (str) => {
+        return str
+            .toLowerCase()
+            .split(' ')
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+            .join(' ');
+    };
+
     const handleQtyChange = (item, type) => {
         setQuantities(prev => ({
             ...prev,
@@ -33,12 +41,12 @@ function OrderAdd({ onBack }) {
 
     const handleSubmit = async () => {
         if (!nama.trim() || !hp.trim()) return alert("Nama dan HP wajib diisi!");
+        const formattedNama = toTitleCase(nama.trim());
 
         const itemsSelected = [];
         if (quantities.karpet > 0) itemsSelected.push({ nama: `${quantities.karpet} Karpet` });
         if (quantities.springbed > 0) itemsSelected.push({ nama: `${quantities.springbed} Springbed` });
         if (quantities.sofa > 0) itemsSelected.push({ nama: `${quantities.sofa} Sofa` });
-
         if (itemsSelected.length === 0) return alert("Pilih minimal 1 item!");
 
         const [tahun, bulan, hari] = tanggal.split('-').map(Number);
@@ -48,7 +56,8 @@ function OrderAdd({ onBack }) {
         try {
             setIsLoading(true);
             await addDoc(collection(db, "orders"), {
-                nama: nama.trim(),
+                // Gunakan formattedNama hasil perbaikan
+                nama: formattedNama,
                 hp: hp.trim(),
                 status: statusOrder,
                 statusBayar: statusBayar,

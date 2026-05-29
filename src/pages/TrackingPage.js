@@ -17,12 +17,6 @@ function TrackingPage() {
         return () => unsubscribe();
     }, []);
 
-    const copyToClipboard = (order) => {
-        const text = `Nama : ${order.nama}\nNo HP : ${order.hp || '-'}\nTanggal Masuk : ${order.tanggal}`;
-        navigator.clipboard.writeText(text);
-        alert("Data order berhasil disalin!");
-    };
-
     const getEstimasiInfo = (tglMasukStr, status) => {
         if (!tglMasukStr) return { tgl: '-', info: '-' };
         const bulanIndo = { 'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'Mei': 4, 'Jun': 5, 'Jul': 6, 'Ags': 7, 'Sep': 8, 'Okt': 9, 'Nov': 10, 'Des': 11 };
@@ -105,12 +99,12 @@ function TrackingPage() {
                     {filteredOrders.length > 0 ? filteredOrders.map((order) => {
                         const status = getStatusInfo(order.status);
                         const est = getEstimasiInfo(order.tanggal, order.status);
-                        const waLink = `https://wa.me/6282151154727?text=Halo Admin, saya ingin menanyakan progres order:%0ANama : ${order.nama}%0ANo HP : ${order.hp || '-'}%0ATanggal Masuk : ${order.tanggal}`;
+                        const waLink = `https://wa.me/6282151154727?text=Halo Admin, saya ingin menanyakan progres order:%0ANama : ${order.nama}%0ATanggal Masuk : ${order.tanggal}`;
 
                         return (
                             <div key={order.id} style={styles.orderCard}>
                                 <div style={styles.cardHeader}>
-                                    <span style={{ ...styles.custName, cursor: 'pointer' }} onClick={() => copyToClipboard(order)}>
+                                    <span style={{ ...styles.custName, cursor: 'pointer' }}>
                                         {order.nama}
                                     </span>
                                     <span style={{ ...styles.badge, backgroundColor: status.bg, color: status.text }}>

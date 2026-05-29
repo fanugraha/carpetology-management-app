@@ -9,6 +9,14 @@ function OrderEdit({ order, onBack, onSaveSuccess }) {
   const [statusOrder, setStatusOrder] = useState(order?.status || 'Waiting List');
   const [isLoading, setIsLoading] = useState(false);
 
+  const toTitleCase = (str) => {
+    return str
+      .toLowerCase()
+      .split(' ')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+  };
+
   // Parsing data item dari string 'total' yang tersimpan di Firestore
   const parseInitialQty = (itemNama) => {
     if (!order?.total) return 0;
@@ -35,6 +43,10 @@ function OrderEdit({ order, onBack, onSaveSuccess }) {
       return;
     }
 
+    // --- PERUBAHAN DI SINI ---
+    const formattedNama = toTitleCase(nama.trim());
+    // -------------------------
+
     const itemsSelected = [];
     if (quantities.karpet > 0) itemsSelected.push({ nama: `${quantities.karpet} Karpet` });
     if (quantities.springbed > 0) itemsSelected.push({ nama: `${quantities.springbed} Springbed` });
@@ -51,7 +63,8 @@ function OrderEdit({ order, onBack, onSaveSuccess }) {
       setIsLoading(true);
       const orderRef = doc(db, "orders", order.id);
       await updateDoc(orderRef, {
-        nama: nama.trim(),
+        // Gunakan formattedNama hasil perbaikan
+        nama: formattedNama,
         hp: hp.trim(),
         status: statusOrder,
         statusBayar: statusBayar,
@@ -61,7 +74,6 @@ function OrderEdit({ order, onBack, onSaveSuccess }) {
 
       alert("✅ Data berhasil diperbarui!");
 
-      // Navigasi dilakukan oleh fungsi ini, tanpa memanggil onBack() lagi
       if (typeof onSaveSuccess === 'function') {
         onSaveSuccess();
       }
