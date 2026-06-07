@@ -1,0 +1,508 @@
+/* ─── Reset & Base ───────────────────────────────────────────────────────── */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+.abf-root {
+  min-height: 100vh;
+  background: #f1f5f9;
+  font-family: 'DM Sans', 'Nunito', sans-serif;
+}
+
+/* ─── Top bar ────────────────────────────────────────────────────────────── */
+.abf-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: rgba(255,255,255,0.85);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid #f1f5f9;
+  padding: 14px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.abf-back {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #04CDCD;
+  font-weight: 700;
+  font-size: 13px;
+  text-decoration: none;
+  transition: opacity 0.15s;
+}
+.abf-back:hover { opacity: 0.65; }
+.abf-back svg { flex-shrink: 0; }
+
+.abf-brand {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: #94a3b8;
+  text-transform: uppercase;
+}
+
+.abf-topbar-spacer { width: 64px; }
+
+/* ─── Page wrapper ───────────────────────────────────────────────────────── */
+.abf-page {
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 36px 20px 80px;
+}
+
+/* ─── Page heading ───────────────────────────────────────────────────────── */
+.abf-eyebrow {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 2.5px;
+  color: #04CDCD;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.abf-title {
+  font-size: 26px;
+  font-weight: 900;
+  color: #0f172a;
+  margin-bottom: 28px;
+  line-height: 1.15;
+}
+
+/* ─── Step indicator ─────────────────────────────────────────────────────── */
+.abf-steps {
+  display: flex;
+  align-items: center;
+  margin-bottom: 28px;
+}
+
+.abf-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.abf-step__bubble {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 800;
+  flex-shrink: 0;
+  transition: all 0.2s;
+  background: #e2e8f0;
+  color: #94a3b8;
+}
+
+.abf-step--active .abf-step__bubble {
+  background: rgba(4,205,205,0.15);
+  color: #04CDCD;
+  box-shadow: 0 0 0 3px rgba(4,205,205,0.2);
+}
+
+.abf-step--done .abf-step__bubble {
+  background: #04CDCD;
+  color: #fff;
+}
+
+.abf-step__label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #cbd5e1;
+  white-space: nowrap;
+}
+
+.abf-step--active .abf-step__label { color: #04CDCD; }
+.abf-step--done  .abf-step__label  { color: #64748b; }
+
+.abf-step-line {
+  flex: 1;
+  height: 2px;
+  background: #e2e8f0;
+  margin: 0 6px;
+  border-radius: 2px;
+  transition: background 0.3s;
+}
+
+.abf-step-line--done { background: rgba(4,205,205,0.5); }
+
+/* ─── Step panel animation ───────────────────────────────────────────────── */
+.abf-panel {
+  animation: abfFadeUp 0.22s ease;
+}
+
+@keyframes abfFadeUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ─── Card ───────────────────────────────────────────────────────────────── */
+.abf-card {
+  background: #fff;
+  border-radius: 20px;
+  border: 1px solid #f1f5f9;
+  box-shadow: 0 2px 16px rgba(15,23,42,0.05);
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+
+.abf-card__header {
+  padding: 12px 18px;
+  background: #f8fafc;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.abf-card__header-label {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  color: #94a3b8;
+  text-transform: uppercase;
+}
+
+.abf-card__body {
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* ─── Floating-label field ───────────────────────────────────────────────── */
+.abf-field {
+  position: relative;
+}
+
+.abf-field__icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 15px;
+  pointer-events: none;
+  z-index: 2;
+  transition: color 0.2s;
+  color: #94a3b8;
+}
+
+.abf-field:focus-within .abf-field__icon { color: #04CDCD; }
+
+.abf-input {
+  width: 100%;
+  padding: 22px 14px 8px 42px;
+  background: #f8fafc;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 14px;
+  font-size: 14px;
+  color: #0f172a;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+}
+
+.abf-input--no-icon {
+  padding-left: 14px;
+}
+
+.abf-input:focus {
+  border-color: #04CDCD;
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(4,205,205,0.1);
+}
+
+.abf-label {
+  position: absolute;
+  left: 42px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 13px;
+  font-weight: 500;
+  color: #94a3b8;
+  pointer-events: none;
+  transition: all 0.18s ease;
+  transform-origin: left center;
+}
+
+.abf-label--no-icon { left: 14px; }
+
+/* raised state — via JS class */
+.abf-label--raised {
+  top: 10px;
+  transform: translateY(0) scale(0.78);
+  color: #64748b;
+  font-weight: 700;
+}
+
+.abf-field:focus-within .abf-label { color: #04CDCD; }
+
+/* textarea variant */
+.abf-textarea {
+  width: 100%;
+  padding: 22px 14px 10px;
+  background: #f8fafc;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 14px;
+  font-size: 14px;
+  color: #0f172a;
+  font-family: inherit;
+  outline: none;
+  resize: none;
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+}
+
+.abf-textarea:focus {
+  border-color: #04CDCD;
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(4,205,205,0.1);
+}
+
+.abf-textarea-label {
+  position: absolute;
+  left: 14px;
+  top: 16px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #94a3b8;
+  pointer-events: none;
+  transition: all 0.18s ease;
+  transform-origin: left center;
+}
+
+.abf-field:focus-within .abf-textarea-label { color: #04CDCD; }
+.abf-textarea-label--raised {
+  top: 8px;
+  transform: scale(0.78);
+  color: #64748b;
+  font-weight: 700;
+}
+
+/* date input */
+.abf-date {
+  width: 100%;
+  padding: 14px;
+  background: #f8fafc;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 14px;
+  font-size: 14px;
+  color: #0f172a;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+}
+
+.abf-date:focus {
+  border-color: #04CDCD;
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(4,205,205,0.1);
+}
+
+/* ─── Section label (above date / sesi) ──────────────────────────────────── */
+.abf-section-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+}
+
+/* ─── Sesi cards ─────────────────────────────────────────────────────────── */
+.abf-sesi-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.abf-sesi-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 18px 12px 14px;
+  border-radius: 16px;
+  border: 2px solid #e2e8f0;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color 0.18s, box-shadow 0.18s, background 0.18s;
+  text-align: center;
+}
+
+.abf-sesi-card:hover:not(.abf-sesi-card--disabled) {
+  border-color: #a5f3f3;
+}
+
+.abf-sesi-card--selected {
+  border-color: #04CDCD;
+  background: rgba(4,205,205,0.04);
+  box-shadow: 0 0 0 4px rgba(4,205,205,0.1);
+}
+
+.abf-sesi-card--disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+  background: #f8fafc;
+}
+
+.abf-sesi-card__emoji { font-size: 26px; margin-bottom: 8px; }
+
+.abf-sesi-card__name {
+  font-size: 13px;
+  font-weight: 800;
+  color: #334155;
+  margin-bottom: 3px;
+}
+
+.abf-sesi-card--selected .abf-sesi-card__name { color: #04CDCD; }
+
+.abf-sesi-card__time {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.abf-sesi-card__check {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #04CDCD;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.abf-sesi-card__na {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  font-size: 9px;
+  font-weight: 700;
+  color: #cbd5e1;
+  letter-spacing: 0.5px;
+}
+
+/* ─── Review rows ────────────────────────────────────────────────────────── */
+.abf-review-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 18px;
+  border-bottom: 1px solid #f8fafc;
+}
+
+.abf-review-row:last-child { border-bottom: none; }
+
+.abf-review-row__key {
+  font-size: 11px;
+  font-weight: 700;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.abf-review-row__val {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e293b;
+  text-align: right;
+  max-width: 62%;
+}
+
+/* ─── Button row ─────────────────────────────────────────────────────────── */
+.abf-btn-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.abf-btn-row--single {
+  grid-template-columns: 1fr;
+}
+
+.abf-btn {
+  padding: 15px;
+  border-radius: 16px;
+  font-size: 14px;
+  font-weight: 800;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s;
+  border: none;
+  outline: none;
+}
+
+.abf-btn--primary {
+  background: #04CDCD;
+  color: #fff;
+  box-shadow: 0 4px 20px rgba(4,205,205,0.3);
+}
+
+.abf-btn--primary:hover:not(:disabled)  { filter: brightness(1.06); }
+.abf-btn--primary:active:not(:disabled) { transform: scale(0.98); }
+.abf-btn--primary:disabled { opacity: 0.3; cursor: not-allowed; box-shadow: none; }
+
+.abf-btn--secondary {
+  background: #fff;
+  color: #475569;
+  border: 2px solid #e2e8f0;
+}
+
+.abf-btn--secondary:hover { border-color: #cbd5e1; }
+
+/* ─── Success screen ─────────────────────────────────────────────────────── */
+.abf-success {
+  min-height: 100vh;
+  background: #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: abfFadeUp 0.3s ease;
+}
+
+.abf-success__inner { text-align: center; }
+
+.abf-success__icon {
+  width: 72px;
+  height: 72px;
+  border-radius: 24px;
+  background: rgba(4,205,205,0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 16px;
+  font-size: 32px;
+}
+
+.abf-success__title {
+  font-size: 20px;
+  font-weight: 900;
+  color: #0f172a;
+  margin-bottom: 6px;
+}
+
+.abf-success__sub {
+  font-size: 14px;
+  color: #94a3b8;
+}
+
+/* spinner */
+.abf-spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255,255,255,0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: abfSpin 0.7s linear infinite;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+
+@keyframes abfSpin { to { transform: rotate(360deg); } }
