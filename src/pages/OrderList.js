@@ -4,6 +4,10 @@ import { useAuth } from '../context/AuthContext';
 import { signOut } from 'firebase/auth';
 import { auth } from '../firebase';
 import Navbar from '../componets/Navbar';
+import { useNavigate } from 'react-router-dom';
+import './OrderList.css';
+
+
 
 function OrderList({ orders, searchQuery, setSearchQuery, activeFilter, setActiveFilter, onOrderClick, onAddClick }) {
     const { user } = useAuth();
@@ -24,6 +28,8 @@ function OrderList({ orders, searchQuery, setSearchQuery, activeFilter, setActiv
 
         return new Date(parts[2], bulanIndo[parts[1]], parseInt(parts[0]));
     };
+
+    const navigate = useNavigate();
 
     const totalOrderAktif = (orders || []).filter(o => o.status !== 'Ready Anter').length;
     const getCount = (status) => status === 'Semua' ? orders.length : orders.filter(o => o.status === status).length;
@@ -75,6 +81,13 @@ function OrderList({ orders, searchQuery, setSearchQuery, activeFilter, setActiv
                     </button>
                 ))}
             </div>
+
+            <button
+                className="jadwal-home-visit-btn"
+                onClick={() => navigate('/admin/jadwal-home-visit')}
+            >
+                Jadwal Home Visit
+            </button>
 
             <div style={styles.sortContainer}>
                 <span style={{ fontSize: '12px', color: '#64748b' }}>Urutkan:</span>

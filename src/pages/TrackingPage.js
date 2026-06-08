@@ -79,6 +79,15 @@ function TrackingPage() {
                 </div>
             </header>
 
+            <div style={{ marginBottom: '20px' }}>
+                <button
+                    onClick={() => navigate('/jadwal')}
+                    style={styles.homeVisitBtn}
+                >
+                    Jadwal Home Serfice Sofa & Springbed
+                </button>
+            </div>
+
             <div style={styles.mainWrapper}>
                 <input
                     type="text"
@@ -151,6 +160,26 @@ const styles = {
     cardBody: { fontSize: '13px', color: '#64748b' },
     infoRow: { display: 'flex', justifyContent: 'space-between', marginTop: '4px' },
     filterContainer: { display: 'flex', gap: '10px', marginBottom: '15px' },
+    homeVisitBtn: {
+        width: '100%',
+        maxWidth: '500px',
+        margin: '0 auto 20px auto',
+        padding: '14px 20px',
+        background: 'linear-gradient(135deg, #04CDCD, #00B8D4)',
+        color: '#fff',
+        border: 'none',
+        borderRadius: '16px',
+        fontSize: '15px',
+        fontWeight: '700',
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '8px',
+        boxShadow: '0 8px 24px rgba(4, 205, 205, 0.35)',
+        transition: 'all 0.2s ease',
+        letterSpacing: '0.3px'
+    },
     filterBtn: { padding: '8px 16px', borderRadius: '20px', border: '1px solid #04CDCD', cursor: 'pointer', fontSize: '12px', fontWeight: '600' },
     emptyState: { textAlign: 'center', padding: '40px', color: '#94a3b8', fontSize: '14px' },
     fab: { position: 'fixed', bottom: '25px', right: '25px', backgroundColor: '#25D366', color: '#fff', width: '56px', height: '56px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 15px rgba(37, 211, 102, 0.4)', zIndex: 1000 },

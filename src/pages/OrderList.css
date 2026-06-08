@@ -1,0 +1,17 @@
+.jadwal-home-visit-btn {
+    margin: 8px 16px;
+    padding: 13px;
+    width: calc(100% - 32px);
+    border-radius: 12px;
+    border: 2px solid #04CDCD;
+    background-color: #fff;
+    color: #04CDCD;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    letter-spacing: 0.3px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
