@@ -98,12 +98,10 @@ function OrderDetail({ order, onBack, onEditClick, onDeleteClick }) {
                                     {belumDiukur ? (
                                         <div style={styles.itemSub}>⚠️ Menunggu pengukuran</div>
                                     ) : item.satuan === 'meter' ? (
-                                        <div style={styles.itemSub}>
-                                            {/* Ukuran karpet boleh dilihat staff, harga per m² hanya admin */}
-                                            📐 {Number(item.panjang || 0).toFixed(1)}m × {Number(item.lebar || 0).toFixed(1)}m
-                                            = {Number(item.luas || 0).toFixed(2)}m²
-                                            {isAdmin && <> × {rupiah(item.harga)}/m²</>}
-                                        </div>
+    <div style={styles.itemSub}>
+        📐 {Number(item.luas || 0).toFixed(2)}m²
+        {isAdmin && <> × {rupiah(item.harga)}/m²</>}
+    </div>
                                     ) : (
                                         <div style={styles.itemSub}>
                                             {/* Jumlah pcs boleh dilihat staff, harga per pcs hanya admin */}

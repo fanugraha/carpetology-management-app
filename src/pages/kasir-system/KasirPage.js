@@ -2092,6 +2092,7 @@ export default function App() {
         },
         metode_pembayaran: metodeLabel,
         status_order: "Waiting List",
+        statusBayar,             
         total_harga: total,
         created_at: serverTimestamp(),
         notaId,

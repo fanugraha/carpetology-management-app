@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { doc, updateDoc } from "firebase/firestore";
 import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
+import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 
 function OrderEdit({ order, onBack, onSaveSuccess }) {
   const { user } = useAuth();
@@ -22,8 +22,6 @@ function OrderEdit({ order, onBack, onSaveSuccess }) {
         satuan: it.satuan || "satuan",
         qty: Number(it.qty) || 1,
         harga: Number(it.harga) || 0,
-        panjang: it.panjang != null ? Number(it.panjang) : null,
-        lebar: it.lebar != null ? Number(it.lebar) : null,
         luas: it.luas != null ? Number(it.luas) : null,
         subtotal: Number(it.subtotal) || 0,
       }));
@@ -42,17 +40,8 @@ function OrderEdit({ order, onBack, onSaveSuccess }) {
     const qty = Math.max(0, val);
     setItems(prev => prev.map((it, i) => {
       if (i !== idx) return it;
-      const luas = it.satuan === "meter" ? (it.panjang || 0) * (it.lebar || 0) : 1;
-      return { ...it, qty, subtotal: it.harga * qty * luas };
-    }));
-  };
-
-  const updateMeter = (idx, field, val) => {
-    setItems(prev => prev.map((it, i) => {
-      if (i !== idx) return it;
-      const updated = { ...it, [field]: parseFloat(val) || 0 };
-      const luas = (updated.panjang || 0) * (updated.lebar || 0);
-      return { ...updated, luas, subtotal: updated.harga * updated.qty * luas };
+      const base = it.satuan === "meter" ? (it.luas || 0) : 1;
+      return { ...it, qty, subtotal: it.harga * qty * base };
     }));
   };
 
@@ -60,9 +49,23 @@ function OrderEdit({ order, onBack, onSaveSuccess }) {
     setItems(prev => prev.map((it, i) => {
       if (i !== idx) return it;
       const harga = parseFloat(val) || 0;
-      const luas = it.satuan === "meter" ? (it.panjang || 0) * (it.lebar || 0) : 1;
-      return { ...it, harga, subtotal: harga * it.qty * luas };
+      const base = it.satuan === "meter" ? (it.luas || 0) : 1;
+      return { ...it, harga, subtotal: harga * it.qty * base };
     }));
+  };
+
+  const updateLuas = (idx, luas) => {
+    setItems(prev => prev.map((it, i) => {
+      if (i !== idx) return it;
+      return { ...it, luas, panjang: null, lebar: null, subtotal: it.harga * it.qty * luas };
+    }));
+  };
+
+  const stepLuas = (idx, delta) => {
+    const item = items[idx];
+    if (!item) return;
+    const newLuas = Math.max(0, parseFloat(((item.luas || 0) + delta).toFixed(2)));
+    updateLuas(idx, newLuas);
   };
 
   const totalHarga = items.reduce((s, it) => s + (it.subtotal || 0), 0);
@@ -77,8 +80,16 @@ function OrderEdit({ order, onBack, onSaveSuccess }) {
     try {
       setIsLoading(true);
 
+      // Hitung ready_at payload
+      const wasReady = order?.status === 'Ready Anter';
+      const isNowReady = statusOrder === 'Ready Anter';
+      const readyAtPayload = isNowReady && !wasReady
+        ? { ready_at: serverTimestamp() }  // baru jadi Ready → catat waktu
+        : !isNowReady && wasReady
+          ? { ready_at: null }            // turun dari Ready → hapus
+          : {};                           // tidak berubah → biarkan
+
       if (isAdmin) {
-        // Admin: update semua field
         const formattedNama = toTitleCase(nama.trim());
         const itemsPayload = items.map((it) => ({
           produkId: it.produkId || it.nama,
@@ -86,8 +97,8 @@ function OrderEdit({ order, onBack, onSaveSuccess }) {
           satuan: it.satuan,
           qty: it.qty,
           harga: it.harga,
-          panjang: it.satuan === "meter" ? (it.panjang || 0) : null,
-          lebar: it.satuan === "meter" ? (it.lebar || 0) : null,
+          panjang: null,
+          lebar: null,
           luas: it.satuan === "meter" ? (it.luas || 0) : null,
           subtotal: it.subtotal,
         }));
@@ -99,11 +110,13 @@ function OrderEdit({ order, onBack, onSaveSuccess }) {
           metode_pembayaran: metode,
           items: itemsPayload,
           total_harga: totalHarga,
+          ...readyAtPayload,   // ← tambahan
         });
       } else {
-        // Staff: HANYA update status_order — sesuai Firestore Rules
+        // Staff: hanya update status_order
         await updateDoc(doc(db, "transactions", order.id), {
           status_order: statusOrder,
+          ...readyAtPayload,   // ← tambahan
         });
       }
 
@@ -131,37 +144,27 @@ function OrderEdit({ order, onBack, onSaveSuccess }) {
         {isAdmin ? 'Edit Order' : 'Update Status Laundry'}
       </h2>
 
-      {/* ── Nama Customer ── */}
+      {/* Nama Customer */}
       <div style={styles.inputGroup}>
         <label style={styles.label}>Nama Customer</label>
         {isAdmin ? (
-          <input
-            type="text"
-            value={nama}
-            onChange={(e) => setNama(e.target.value)}
-            style={styles.input}
-          />
+          <input type="text" value={nama} onChange={(e) => setNama(e.target.value)} style={styles.input} />
         ) : (
           <div style={styles.readOnly}>{nama}</div>
         )}
       </div>
 
-      {/* ── Nomor HP ── */}
+      {/* Nomor HP */}
       <div style={styles.inputGroup}>
         <label style={styles.label}>Nomor HP</label>
         {isAdmin ? (
-          <input
-            type="text"
-            value={hp}
-            onChange={(e) => setHp(e.target.value)}
-            style={styles.input}
-          />
+          <input type="text" value={hp} onChange={(e) => setHp(e.target.value)} style={styles.input} />
         ) : (
           <div style={styles.readOnly}>{hp}</div>
         )}
       </div>
 
-      {/* ── Detail Item ── */}
+      {/* Detail Item */}
       <label style={{ fontWeight: 600, marginBottom: 10, display: 'block', color: '#475569' }}>
         Detail Item
       </label>
@@ -173,28 +176,12 @@ function OrderEdit({ order, onBack, onSaveSuccess }) {
       {items.map((item, idx) => (
         <div key={idx} style={styles.itemCard}>
 
-          {/* Nama item — semua bisa lihat */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-            <span style={{ fontWeight: 700, fontSize: 14, color: '#1e293b' }}>
-              {item.nama}
-            </span>
-
-            {/* Kontrol qty — hanya admin */}
-            {isAdmin ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <button onClick={() => updateQty(idx, item.qty - 1)} style={styles.qtyBtn}>−</button>
-                <span style={{ width: 24, textAlign: 'center', fontWeight: 700 }}>{item.qty}</span>
-                <button onClick={() => updateQty(idx, item.qty + 1)} style={styles.qtyBtn}>+</button>
-              </div>
-            ) : (
-              // Staff hanya lihat qty, tidak bisa ubah
-              <span style={{ fontWeight: 700, fontSize: 13, color: '#64748b' }}>
-                {item.qty}×
-              </span>
-            )}
+          {/* Nama + qty */}
+          <div style={{ marginBottom: 10 }}>
+            <span style={{ fontWeight: 700, fontSize: 14, color: '#1e293b' }}>{item.nama}</span>
           </div>
 
-          {/* Field harga & ukuran — hanya admin */}
+          {/* Harga & luas — hanya admin */}
           {isAdmin && (
             <>
               <div style={styles.fieldRow}>
@@ -209,41 +196,39 @@ function OrderEdit({ order, onBack, onSaveSuccess }) {
               </div>
 
               {item.satuan === "meter" && (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
-                  <div>
-                    <label style={styles.fieldLabel}>Panjang (m)</label>
+                <div style={{ marginTop: 10 }}>
+                  <label style={styles.fieldLabel}>Luas (m²)</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <button
+                      onClick={() => stepLuas(idx, -0.1)}
+                      style={{ ...styles.qtyBtn, width: 38, height: 38, fontSize: 20, borderRadius: 8 }}
+                    >−</button>
                     <input
                       type="number" step="0.1" min="0"
-                      value={item.panjang ?? 0}
-                      onChange={(e) => updateMeter(idx, "panjang", e.target.value)}
-                      style={{ ...styles.input, marginBottom: 0 }}
+                      value={item.luas ?? ""}
+                      onChange={(e) => updateLuas(idx, parseFloat(e.target.value) || 0)}
+                      style={{ ...styles.input, marginBottom: 0, textAlign: 'center', fontWeight: 700, flex: 1 }}
+                      placeholder="0.00"
                     />
-                  </div>
-                  <div>
-                    <label style={styles.fieldLabel}>Lebar (m)</label>
-                    <input
-                      type="number" step="0.1" min="0"
-                      value={item.lebar ?? 0}
-                      onChange={(e) => updateMeter(idx, "lebar", e.target.value)}
-                      style={{ ...styles.input, marginBottom: 0 }}
-                    />
+                    <button
+                      onClick={() => stepLuas(idx, 0.1)}
+                      style={{ ...styles.qtyBtn, width: 38, height: 38, fontSize: 20, borderRadius: 8 }}
+                    >+</button>
                   </div>
                 </div>
               )}
             </>
           )}
 
-          {/* Ringkasan luas/subtotal — hanya admin */}
+          {/* Ringkasan meter — admin */}
           {isAdmin && item.satuan === "meter" && (
             <div style={styles.luasBox}>
-              <span>
-                📐 {(item.panjang || 0).toFixed(1)}m × {(item.lebar || 0).toFixed(1)}m
-                = <strong>{(item.luas || 0).toFixed(2)} m²</strong>
-              </span>
+              <span>📐 <strong>{(item.luas || 0).toFixed(2)} m²</strong></span>
               <span style={{ fontWeight: 700, color: '#04CDCD' }}>{rupiah(item.subtotal)}</span>
             </div>
           )}
 
+          {/* Ringkasan satuan — admin */}
           {isAdmin && item.satuan !== "meter" && (
             <div style={{ ...styles.luasBox, marginTop: 8 }}>
               <span>{item.qty} pcs × {rupiah(item.harga)}</span>
@@ -251,11 +236,10 @@ function OrderEdit({ order, onBack, onSaveSuccess }) {
             </div>
           )}
 
-          {/* Staff: hanya tampilkan ukuran karpet tanpa nominal */}
-          {!isAdmin && item.satuan === "meter" && item.luas > 0 && (
+          {/* Staff: tampilkan luas tanpa nominal */}
+          {!isAdmin && item.satuan === "meter" && (item.luas || 0) > 0 && (
             <div style={styles.luasBoxStaff}>
-              📐 {(item.panjang || 0).toFixed(1)}m × {(item.lebar || 0).toFixed(1)}m
-              = <strong>{(item.luas || 0).toFixed(2)} m²</strong>
+              📐 <strong>{(item.luas || 0).toFixed(2)} m²</strong>
             </div>
           )}
 
@@ -275,11 +259,7 @@ function OrderEdit({ order, onBack, onSaveSuccess }) {
         <>
           <div style={styles.inputGroup}>
             <label style={styles.label}>Status Pembayaran</label>
-            <select
-              value={statusBayar}
-              onChange={(e) => setStatusBayar(e.target.value)}
-              style={styles.input}
-            >
+            <select value={statusBayar} onChange={(e) => setStatusBayar(e.target.value)} style={styles.input}>
               <option value="Belum Lunas">Belum Lunas</option>
               <option value="Lunas">Lunas</option>
             </select>
@@ -316,14 +296,10 @@ function OrderEdit({ order, onBack, onSaveSuccess }) {
         </>
       )}
 
-      {/* ── Progres Laundry — semua role bisa edit ── */}
+      {/* Progres Laundry — semua role */}
       <div style={styles.inputGroup}>
         <label style={styles.label}>Progres Laundry</label>
-        <select
-          value={statusOrder}
-          onChange={(e) => setStatusOrder(e.target.value)}
-          style={styles.input}
-        >
+        <select value={statusOrder} onChange={(e) => setStatusOrder(e.target.value)} style={styles.input}>
           <option value="Waiting List">Waiting List</option>
           <option value="Sudah Dicuci">Sudah Dicuci</option>
           <option value="Ready Anter">Ready</option>
@@ -349,12 +325,10 @@ const styles = {
     border: '2px solid #e2e8f0', boxSizing: 'border-box',
     outlineColor: '#04CDCD', fontSize: 14,
   },
-  // Field read-only untuk staff (tidak bisa diedit)
   readOnly: {
     width: '100%', padding: '12px', borderRadius: '10px',
     border: '2px solid #f1f5f9', boxSizing: 'border-box',
-    backgroundColor: '#f8fafc', color: '#64748b',
-    fontSize: 14,
+    backgroundColor: '#f8fafc', color: '#64748b', fontSize: 14,
   },
   fieldRow: { marginTop: 8 },
   fieldLabel: {
@@ -376,7 +350,6 @@ const styles = {
     background: '#e0fafa', borderRadius: 8, padding: '8px 12px',
     marginTop: 8, fontSize: 13, color: '#0F6E56',
   },
-  // Versi luasBox untuk staff — tanpa nominal harga
   luasBoxStaff: {
     background: '#f0fdf4', borderRadius: 8, padding: '8px 12px',
     marginTop: 8, fontSize: 13, color: '#166534',

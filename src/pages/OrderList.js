@@ -5,8 +5,8 @@ import { signOut } from 'firebase/auth';
 import { auth, db } from '../firebase';
 import Navbar from '../componets/Navbar';
 import { useNavigate } from 'react-router-dom';
-import { collection, onSnapshot, doc, getDoc } from 'firebase/firestore';
 import './OrderList.css';
+import { collection, onSnapshot, doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 
 function OrderList({ searchQuery, setSearchQuery, activeFilter, setActiveFilter, onOrderClick }) {
     const { user } = useAuth();
@@ -16,6 +16,28 @@ function OrderList({ searchQuery, setSearchQuery, activeFilter, setActiveFilter,
     const navigate = useNavigate();
 
     const customerCache = React.useRef({});
+
+    // Hitung sisa hari sebelum auto-hide (dari ready_at, fallback created_at)
+    const getReadyTimestamp = (order) => {
+        const ts = order.ready_at || order.created_at;
+        if (!ts) return null;
+        return ts?.seconds ? new Date(ts.seconds * 1000) : new Date(ts);
+    };
+
+    const isAutoHidden = (order) => {
+        if (order.status !== 'Ready Anter') return false;
+        const readyDate = getReadyTimestamp(order);
+        if (!readyDate) return false;
+        const selisihHari = (new Date() - readyDate) / (1000 * 60 * 60 * 24);
+        return selisihHari >= 7;
+    };
+
+    const sisaHariReady = (order) => {
+        const readyDate = getReadyTimestamp(order);
+        if (!readyDate) return 7;
+        const selisihHari = (new Date() - readyDate) / (1000 * 60 * 60 * 24);
+        return Math.max(0, Math.ceil(7 - selisihHari));
+    };
 
     const fetchCustomer = async (customerRef) => {
         if (!customerRef) return { nama: '-', no_hp: '-' };
@@ -44,11 +66,14 @@ function OrderList({ searchQuery, setSearchQuery, activeFilter, setActiveFilter,
                     const customer = await fetchCustomer(tx.customer_id);
                     return {
                         ...tx,
+                        ready_at: tx.ready_at || null,
+                        created_at: tx.created_at || null,
+                        is_hidden: tx.is_hidden || false,
                         nama: tx.nama || tx.customerNama || customer.nama || '-',
                         hp: tx.hp || tx.customerHp || tx.no_hp || customer.no_hp || '-',
                         status: tx.status_order || tx.status || 'Waiting List',
                         statusBayar: tx.statusBayar || 'Belum Lunas',
-                        metode_pembayaran: tx.metode_pembayaran || '',
+                        metode_pembayaran: tx.metode_pembayaran || tx.metode || '',
                         tanggal: tx.tanggal || (tx.created_at?.seconds
                             ? new Date(tx.created_at.seconds * 1000).toLocaleDateString('id-ID', {
                                 day: '2-digit', month: 'short', year: 'numeric'
@@ -115,8 +140,12 @@ function OrderList({ searchQuery, setSearchQuery, activeFilter, setActiveFilter,
 
     const filtered = applyFilter(transactions);
     const orderAktif = sortList(filtered.filter(o => o.status !== 'Ready Anter'));
-    const orderReady = sortList(filtered.filter(o => o.status === 'Ready Anter'));
-    const totalAktif = transactions.filter(o => o.status !== 'Ready Anter').length;
+    const orderReady = sortList(
+        filtered
+            .filter(o => o.status === 'Ready Anter')
+            .filter(o => !isAutoHidden(o))   // filter auto-hide 7 hari
+            .filter(o => !o.is_hidden)        // filter hide manual admin
+    ); const totalAktif = transactions.filter(o => o.status !== 'Ready Anter').length;
 
     return (
         <div style={styles.container}>
@@ -231,7 +260,14 @@ function OrderList({ searchQuery, setSearchQuery, activeFilter, setActiveFilter,
                                     </span>
                                 </div>
                                 {orderReady.map((order) => (
-                                    <OrderRow key={order.id} order={order} onClick={onOrderClick} isReady={true} />
+                                    <OrderRow
+                                        key={order.id}
+                                        order={order}
+                                        onClick={onOrderClick}
+                                        isReady={true}
+                                        isAdmin={user?.role === 'admin' || user?.role === 'Admin'}  // ← prop baru
+                                        sisaHari={sisaHariReady(order)}                              // ← prop baru
+                                    />
                                 ))}
                             </>
                         )}
