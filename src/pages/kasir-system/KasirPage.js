@@ -378,30 +378,19 @@ function StepProduk({ products, loadingProducts, cart, onCartChange, onNext }) {
   const addToCart = (prod) => {
     const existing = cart.find((c) => c.produkId === prod.id);
     if (existing) {
-      onCartChange(
-        cart.map((c) =>
-          c.produkId === prod.id
-            ? {
-              ...c,
-              qty: c.qty + 1,
-              subtotal: c.satuan === "meter"
-                ? c.harga * (c.qty + 1) * (parseFloat(c.luas) || 0)
-                : c.harga * (c.qty + 1),
-            }
-            : c
-        )
-      );
+      return;
     } else {
+      // Logic JIKA BARU DITAMBAHKAN
       onCartChange([...cart, {
         produkId: prod.id,
-        nama: prod.nama,
-        satuan: prod.satuan,
-        harga: prod.harga,
-        qty: 1,
-        panjang: null,
-        lebar: null,
-        luas: prod.satuan === "meter" ? "" : null,
-        subtotal: 0,
+      nama: prod.nama,
+      satuan: prod.satuan,
+      harga: prod.harga,
+      qty: 1,
+      panjang: null,
+      lebar: null,
+      luas: prod.satuan === "meter" ? "" : null,
+      subtotal: prod.satuan === "meter" ? 0 : prod.harga * 1,
       }]);
     }
   };
@@ -433,8 +422,8 @@ function StepProduk({ products, loadingProducts, cart, onCartChange, onNext }) {
 
   const total = cart.reduce((s, c) => s + c.subtotal, 0);
   // Tidak valid jika ada produk meter yang belum diisi P atau L
-  const cartValid = cart.length > 0;
-
+  const cartValid = cart.length > 0 &&
+    cart.every(c => c.satuan !== 'meter' || (parseFloat(c.luas) || 0) > 0);
 
   return (
     <div className="animate-in" style={{ display: "flex", flexDirection: "column", height: "100%" }}>
@@ -585,9 +574,9 @@ function StepProduk({ products, loadingProducts, cart, onCartChange, onNext }) {
               <div className="badge badge-primary">{cart.reduce((s, c) => s + c.qty, 0)} pcs/lot</div>
             </div>
             {/* Warning jika ada meter yang belum diisi */}
-            {cart.some((c) => c.satuan === "meter" && ((c.panjang || 0) === 0 || (c.lebar || 0) === 0)) && (
-              <div style={{ background: C.primary50, border: `1px solid ${C.primary200}`, borderRadius: 8, padding: "8px 12px", fontSize: 12, color: C.primary700, display: "flex", alignItems: "center", gap: 6 }}>
-                💡 Ukuran karpet diisi 0 — bisa diupdate setelah pengukuran
+            {cart.some((c) => c.satuan === "meter" && ((parseFloat(c.luas) || 0) === 0)) && (
+              <div style={{ background: C.dangerBg, border: `1px solid ${C.danger}`, borderRadius: 8, padding: "8px 12px", fontSize: 12, color: C.danger, display: "flex", alignItems: "center", gap: 6 }}>
+                ⚠️ Luas karpet wajib diisi sebelum lanjut
               </div>
             )}
           </div>
@@ -1185,6 +1174,7 @@ function EditNotaModal({ order, onClose, onSaved }) {
   );
   const [statusBayar, setStatusBayar] = useState(order.statusBayar || "Belum Lunas");
   const [saving, setSaving] = useState(false);
+  const [statusOrder, setStatusOrder] = useState(order?.status_order || order?.status || "Waiting List");
 
   const rupiah = (n) => "Rp " + (n || 0).toLocaleString("id-ID");
 
@@ -1222,44 +1212,45 @@ function EditNotaModal({ order, onClose, onSaved }) {
     try {
       const { doc, updateDoc, collection, query, where, getDocs } = await import("firebase/firestore");
 
-      const itemsPayload = items.map(it => ({
+      const itemsPayload = items.map((it) => ({
         produkId: it.produkId || "",
         nama: it.nama,
         satuan: it.satuan,
         qty: it.qty,
         harga: it.harga,
-        panjang: null,   // ← tidak dipakai lagi
-        lebar: null,     // ← tidak dipakai lagi
+        panjang: null,
+        lebar: null,
         luas: it.satuan === "meter" ? (parseFloat(it.luas) || 0) : null,
         subtotal: it.subtotal,
       }));
 
-      const updatePayload = {
-        items: itemsPayload,
-        total_harga: totalBaru,
-        statusBayar,
-        metode_pembayaran: metode,
-      };
+      // Cari transaksi berdasarkan notaId yang unik
+      const q = query(
+        collection(db, "transactions"),
+        where("notaId", "==", order.notaId)
+      );
+      const txSnap = await getDocs(q);
 
-      await updateDoc(doc(db, "orders", order.id), updatePayload);
+      if (txSnap.empty) {
+        alert("Transaksi tidak ditemukan!");
+        return;
+      }
 
-      if (order.notaId) {
-        const txSnap = await getDocs(
-          query(collection(db, "transactions"), where("notaId", "==", order.notaId))
-        );
-        for (const txDoc of txSnap.docs) {
-          await updateDoc(doc(db, "transactions", txDoc.id), {
-            items: itemsPayload,
-            total_harga: totalBaru,
-            status_order: statusBayar,
-            metode_pembayaran: metode,
-          });
-        }
+      // Update semua transaksi yang ditemukan
+      for (const txDoc of txSnap.docs) {
+        await updateDoc(doc(db, "transactions", txDoc.id), {
+          items: itemsPayload,
+          total_harga: totalBaru,
+          statusBayar: statusBayar,
+          metode_pembayaran: metode,
+          status_order: statusOrder,
+        });
       }
 
       onSaved();
       onClose();
     } catch (e) {
+      console.error("Gagal menyimpan:", e);
       alert("Gagal menyimpan: " + e.message);
     } finally {
       setSaving(false);
@@ -1452,6 +1443,7 @@ function NotaPage({ notaId, orders, onBack }) {
   const [showEdit, setShowEdit] = useState(false);
   const [saved, setSaved] = useState(false);
 
+
   if (!order) {
     return (
       <div className="kasir-root">
@@ -1476,14 +1468,8 @@ function NotaPage({ notaId, orders, onBack }) {
     );
   }
 
-  const adaBelumDiukur = order.items.some(it => it.satuan === "meter" && (!it.luas || it.luas === 0));
-  const totalSudah = order.items
-    .filter(it => !(it.satuan === "meter" && (!it.luas || it.luas === 0)))
-    .reduce((s, it) => s + (it.subtotal || 0), 0);
-
   return (
     <div className="kasir-root" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
-      {/* Edit modal */}
       {showEdit && (
         <EditNotaModal
           order={order}
@@ -1513,8 +1499,8 @@ function NotaPage({ notaId, orders, onBack }) {
           borderRadius: 12, padding: "10px 16px", display: "flex", justifyContent: "space-between",
           alignItems: "center", marginBottom: 20,
         }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: order.statusBayar === "Belum Payment" ? "#D97706" : "#15803D" }}>
-            {order.statusBayar === "Belum Payment" ? "⏳ Belum Lunas" : "✅ Lunas"}
+          <div style={{ fontSize: 13, fontWeight: 700, color: order.statusBayar === "Belum Lunas" ? "#D97706" : "#15803D" }}>
+            {order.statusBayar === "Belum Lunas" ? "⏳ Belum Lunas" : "✅ Lunas"}
           </div>
           <div style={{ fontSize: 11, color: C.muted }}>{fmtDate(order.tanggal || order.timestamp)}</div>
         </div>
@@ -1533,10 +1519,15 @@ function NotaPage({ notaId, orders, onBack }) {
             <span style={{ fontSize: 12, fontWeight: 700, color: "white", textTransform: "uppercase", letterSpacing: "0.5px" }}>Detail Item</span>
             <span style={{ fontSize: 12, color: "rgba(255,255,255,0.8)" }}>{order.items.length} item</span>
           </div>
+
           {order.items.map((item, i) => {
             const belumDiukur = item.satuan === "meter" && (!item.luas || item.luas === 0);
             return (
-              <div key={i} style={{ padding: "12px 16px", borderBottom: i < order.items.length - 1 ? `1px solid ${C.border}` : "none", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <div key={i} style={{
+                padding: "12px 16px",
+                borderBottom: i < order.items.length - 1 ? `1px solid ${C.border}` : "none",
+                display: "flex", justifyContent: "space-between", alignItems: "flex-start",
+              }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: C.dark }}>{item.nama}</div>
                   {belumDiukur ? (
@@ -1544,10 +1535,7 @@ function NotaPage({ notaId, orders, onBack }) {
                   ) : item.satuan === "meter" ? (
                     <>
                       <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
-                        📐 {(item.panjang || 0).toFixed(1)}m × {(item.lebar || 0).toFixed(1)}m = {(item.luas || 0).toFixed(2)} m²
-                      </div>
-                      <div style={{ fontSize: 11, color: C.muted }}>
-                        {(item.luas || 0).toFixed(2)} m² × {rupiah(item.harga)}/m²
+                        📐 {(item.luas || 0).toFixed(2)} m² × {rupiah(item.harga)}/m²
                       </div>
                     </>
                   ) : (
@@ -1563,53 +1551,32 @@ function NotaPage({ notaId, orders, onBack }) {
             );
           })}
 
-          <div>
-            {order.diskon?.amount > 0 && (
-              <>
-                <div style={{ padding: "8px 16px", display: "flex", justifyContent: "space-between", borderTop: `1px solid ${C.border}` }}>
-                  <span style={{ fontSize: 12, color: C.muted }}>Subtotal</span>
-                  <span style={{ fontSize: 12, color: C.muted }}>{rupiah((order.subtotal) || order.total + order.diskon.amount)}</span>
-                </div>
-                <div style={{ padding: "8px 16px", display: "flex", justifyContent: "space-between", background: C.successBg }}>
-                  <span style={{ fontSize: 12, color: "#15803D", fontWeight: 600 }}>
-                    ✂️ Diskon {order.diskon.type === "persen" ? `${order.diskon.nilai}%` : ""}
-                  </span>
-                  <span style={{ fontSize: 12, color: "#15803D", fontWeight: 600 }}>-{rupiah(order.diskon.amount)}</span>
-                </div>
-              </>
-            )}
-            <div style={{ padding: "14px 16px", background: C.primary100, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: 14, fontWeight: 800, color: C.primary700 }}>Total</span>
-              <span style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 20, fontWeight: 800, color: C.primary700 }}>
-                {rupiah(order.total)}
-              </span>
-            </div>
-          </div>
-
-          {/* Total */}
-          {adaBelumDiukur ? (
+          {/* Diskon — hanya tampil jika ada */}
+          {order.diskon?.amount > 0 && (
             <>
-              <div style={{ padding: "10px 16px", background: C.warningBg, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: 12, color: "#92400E" }}>Subtotal (sudah dihitung)</span>
-                <span style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 14, fontWeight: 700, color: "#92400E" }}>{rupiah(totalSudah)}</span>
+              <div style={{ padding: "8px 16px", display: "flex", justifyContent: "space-between", borderTop: `1px solid ${C.border}` }}>
+                <span style={{ fontSize: 12, color: C.muted }}>Subtotal</span>
+                <span style={{ fontSize: 12, color: C.muted }}>{rupiah(order.subtotal || order.total + order.diskon.amount)}</span>
               </div>
-              <div style={{ padding: "10px 16px", background: C.warningBg, borderTop: `1px solid ${C.warning}` }}>
-                <div style={{ fontSize: 11, color: "#92400E", fontWeight: 600, textAlign: "center" }}>
-                  ⚠️ Total sementara — biaya karpet menyusul setelah pengukuran
-                </div>
+              <div style={{ padding: "8px 16px", display: "flex", justifyContent: "space-between", background: C.successBg }}>
+                <span style={{ fontSize: 12, color: "#15803D", fontWeight: 600 }}>
+                  ✂️ Diskon {order.diskon.type === "persen" ? `${order.diskon.nilai}%` : ""}
+                </span>
+                <span style={{ fontSize: 12, color: "#15803D", fontWeight: 600 }}>-{rupiah(order.diskon.amount)}</span>
               </div>
             </>
-          ) : (
-            <div style={{ padding: "14px 16px", background: C.primary100, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: 14, fontWeight: 800, color: C.primary700 }}>Total</span>
-              <span style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 20, fontWeight: 800, color: C.primary700 }}>
-                {rupiah(order.total)}
-              </span>
-            </div>
           )}
+
+          {/* Total — hanya 1x */}
+          <div style={{ padding: "14px 16px", background: C.primary100, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: 14, fontWeight: 800, color: C.primary700 }}>Total</span>
+            <span style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 20, fontWeight: 800, color: C.primary700 }}>
+              {rupiah(order.total)}
+            </span>
+          </div>
         </div>
 
-        {/* Payment method */}
+        {/* Badge status */}
         <div style={{ display: "flex", gap: 8, marginBottom: 24, flexWrap: "wrap" }}>
           <span className={`badge ${order.statusBayar === "Lunas" ? "badge-success" : "badge-warning"}`} style={{ padding: "6px 12px", fontSize: 12 }}>
             {order.statusBayar === "Lunas" ? "✅ Lunas" : "⏳ Belum Lunas"}
@@ -1627,12 +1594,11 @@ function NotaPage({ notaId, orders, onBack }) {
           {onBack && (
             <button className="btn btn-secondary" style={{ flex: 1 }} onClick={onBack}>← Kembali</button>
           )}
-          <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => { window.print(); }}>
+          <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => window.print()}>
             🖨 Cetak Nota
           </button>
         </div>
 
-        {/* Tombol Edit — hanya untuk admin (onBack ada) */}
         {onBack && (
           <button
             className="btn btn-ghost btn-full no-print"
@@ -1642,7 +1608,7 @@ function NotaPage({ notaId, orders, onBack }) {
           </button>
         )}
 
-        {/* Footer nota */}
+        {/* Footer */}
         <div style={{ textAlign: "center", marginTop: 24, paddingTop: 16, borderTop: `1px dashed ${C.border}` }}>
           <div style={{ fontSize: 11, color: C.muted }}>Terima kasih telah mempercayai</div>
           <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 14, fontWeight: 700, color: C.primary, marginTop: 4 }}>
@@ -1884,6 +1850,11 @@ function RiwayatPage({ orders, loadingOrders, onViewNota }) {
                       {i.qty}× {i.nama}
                     </span>
                   ))}
+                  {order.catatan && (
+                    <div style={{ fontSize: 11, color: "#D97706", marginTop: 4, fontStyle: "italic" }}>
+                      📝 {order.catatan}
+                    </div>
+                  )}
                 </div>
                 <div className="history-bottom">
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -1977,15 +1948,32 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    // Orders — real-time
+    // Ubah query dari "orders" ke "transactions"
     const unsub = onSnapshot(
-      query(collection(db, "orders"), orderBy("timestamp", "desc")),
+      query(collection(db, "transactions"), orderBy("created_at", "desc")),
       (snap) => {
-        setOrders(snap.docs.map(mapOrder));
+        // Kita map data dari 'transactions' agar kompatibel dengan state 'orders'
+        setOrders(snap.docs.map(doc => {
+          const d = doc.data();
+          return {
+            id: doc.id,
+            ...d,
+            // Normalisasi agar komponen RiwayatPage tidak error:
+            customerNama: d.nama,
+            customerHp: d.hp,
+            metode: d.metode_pembayaran,
+            total: d.total_harga,
+            tanggal: d.tanggal,
+            statusBayar: d.statusBayar,
+            items: d.items,
+            notaId: d.notaId,
+            catatan: d.catatan || ""
+          };
+        }));
         setLoadingOrders(false);
       },
       (e) => {
-        console.error("Gagal load orders:", e);
+        console.error("Gagal load transactions:", e);
         setLoadingOrders(false);
       }
     );
@@ -2056,30 +2044,7 @@ export default function App() {
         subtotal: c.subtotal,
       }));
 
-      const orderPayload = {
-        customer_id: doc(db, "customers", customer.id),
-        nama: customer.nama,
-        hp: customer.hp,
-        items: itemsPayload,
-        subtotal_harga: subtotal,
-        diskon: {
-          type: diskonType,
-          nilai: diskonVal,
-          amount: diskonAmount,
-        },
-        total_harga: total,
-        metode_pembayaran: metodeLabel,
-        statusBayar,
-        status: "Waiting List",
-        tanggal: tanggalIndo,
-        timestamp: serverTimestamp(),
-        catatan: catatan || "",
-        notaId,
-      };
-
-      const docRef = await addDoc(collection(db, "orders"), orderPayload);
-
-      await addDoc(collection(db, "transactions"), {
+      const txRef = await addDoc(collection(db, "transactions"), {
         customer_id: doc(db, "customers", customer.id),
         nama: customer.nama,
         hp: customer.hp,
@@ -2092,15 +2057,16 @@ export default function App() {
         },
         metode_pembayaran: metodeLabel,
         status_order: "Waiting List",
-        statusBayar,             
+        statusBayar,
         total_harga: total,
         created_at: serverTimestamp(),
+        tanggal: tanggalIndo,
+        catatan: catatan || "",
         notaId,
-        order_id: docRef.id,
       });
 
       const newOrder = {
-        id: docRef.id,
+        id: txRef.id,        // ← ganti dari docRef.id
         customerId: customer.id,
         customerNama: customer.nama,
         customerHp: customer.hp,

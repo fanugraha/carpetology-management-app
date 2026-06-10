@@ -30,7 +30,7 @@ function OrderDetail({ order, onBack, onEditClick, onDeleteClick }) {
             : { label: '⏳ Belum Lunas', bg: '#fef3c7', color: '#d97706', border: '#fcd34d' };
     };
 
-    const statusBadge = getStatusBadge(order.status);
+const statusBadge = getStatusBadge(order.status_order || order.status);
     const payBadge = getPayBadge(order.statusBayar);
 
     return (
@@ -98,10 +98,10 @@ function OrderDetail({ order, onBack, onEditClick, onDeleteClick }) {
                                     {belumDiukur ? (
                                         <div style={styles.itemSub}>⚠️ Menunggu pengukuran</div>
                                     ) : item.satuan === 'meter' ? (
-    <div style={styles.itemSub}>
-        📐 {Number(item.luas || 0).toFixed(2)}m²
-        {isAdmin && <> × {rupiah(item.harga)}/m²</>}
-    </div>
+                                        <div style={styles.itemSub}>
+                                            📐 {Number(item.luas || 0).toFixed(2)}m²
+                                            {isAdmin && <> × {rupiah(item.harga)}/m²</>}
+                                        </div>
                                     ) : (
                                         <div style={styles.itemSub}>
                                             {/* Jumlah pcs boleh dilihat staff, harga per pcs hanya admin */}

@@ -10,9 +10,10 @@ function OrderEdit({ order, onBack, onSaveSuccess }) {
   const [nama, setNama] = useState(order?.nama || '');
   const [hp, setHp] = useState(order?.hp || '');
   const [statusBayar, setStatusBayar] = useState(order?.statusBayar || 'Belum Lunas');
-  const [statusOrder, setStatusOrder] = useState(order?.status || 'Waiting List');
+  const [statusOrder, setStatusOrder] = useState(order?.status_order || order?.status || 'Waiting List');
   const [isLoading, setIsLoading] = useState(false);
   const [metode, setMetode] = useState(order?.metode_pembayaran || 'Belum Payment');
+  const [catatan, setCatatan] = useState(order?.catatan || "");
 
   const buildInitialItems = () => {
     if (order?.items && Array.isArray(order.items) && order.items.length > 0) {
@@ -80,14 +81,13 @@ function OrderEdit({ order, onBack, onSaveSuccess }) {
     try {
       setIsLoading(true);
 
-      // Hitung ready_at payload
-      const wasReady = order?.status === 'Ready Anter';
+      const wasReady = (order?.status_order || order?.status) === 'Ready Anter'; // Fallback check
       const isNowReady = statusOrder === 'Ready Anter';
       const readyAtPayload = isNowReady && !wasReady
-        ? { ready_at: serverTimestamp() }  // baru jadi Ready → catat waktu
+        ? { ready_at: serverTimestamp() }
         : !isNowReady && wasReady
-          ? { ready_at: null }            // turun dari Ready → hapus
-          : {};                           // tidak berubah → biarkan
+          ? { ready_at: null }
+          : {};
 
       if (isAdmin) {
         const formattedNama = toTitleCase(nama.trim());
@@ -102,21 +102,22 @@ function OrderEdit({ order, onBack, onSaveSuccess }) {
           luas: it.satuan === "meter" ? (it.luas || 0) : null,
           subtotal: it.subtotal,
         }));
+
         await updateDoc(doc(db, "transactions", order.id), {
           nama: formattedNama,
           hp: hp.trim(),
-          status_order: statusOrder,
+          status_order: statusOrder, // <--- Gunakan status_order
           statusBayar: statusBayar,
           metode_pembayaran: metode,
           items: itemsPayload,
+          catatan: catatan,
           total_harga: totalHarga,
-          ...readyAtPayload,   // ← tambahan
+          ...readyAtPayload,
         });
       } else {
-        // Staff: hanya update status_order
         await updateDoc(doc(db, "transactions", order.id), {
-          status_order: statusOrder,
-          ...readyAtPayload,   // ← tambahan
+          status_order: statusOrder, // <--- Gunakan status_order
+          ...readyAtPayload,
         });
       }
 
@@ -304,6 +305,18 @@ function OrderEdit({ order, onBack, onSaveSuccess }) {
           <option value="Sudah Dicuci">Sudah Dicuci</option>
           <option value="Ready Anter">Ready</option>
         </select>
+      </div>
+
+      {/* Catatan */}
+      <div style={styles.inputGroup}>
+        <label style={styles.label}>Catatan Tambahan</label>
+        <input
+          type="text"
+          value={catatan}
+          onChange={(e) => setCatatan(e.target.value)}
+          style={styles.input}
+          placeholder="Contoh: Titipan di rumah sebelah..."
+        />
       </div>
 
       <button onClick={handleSimpan} style={styles.saveBtn}>Simpan Perubahan</button>

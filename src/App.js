@@ -12,6 +12,8 @@ import UbahOrderHomeVisit from './pages/Ubahorderhomevisit';
 import ProductPage from './pages/ProductPage';
 import DetailProduk from './pages/DetailProduk';
 import KasirPage from './pages/kasir-system/KasirPage';
+import './global.css';
+
 
 function App() {
     const { user, loading } = useAuth(); // ← tambah loading
