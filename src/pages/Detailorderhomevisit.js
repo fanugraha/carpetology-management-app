@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { db } from '../firebase';
 import { doc, onSnapshot, deleteDoc } from 'firebase/firestore';
 import './Detailorderhomevisit.css';
+import { useAuth } from '../context/AuthContext';
 
 const BULAN_FULL = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
 const HARI_FULL = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
@@ -16,6 +17,8 @@ function formatTanggal(str) {
 export default function DetailOrderHomeVisit() {
     const { id } = useParams();
     const navigate = useNavigate();
+    const { user } = useAuth();
+    const isAdmin = user?.role === 'admin' || user?.role === 'Admin';
 
     const [booking, setBooking] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -200,7 +203,8 @@ export default function DetailOrderHomeVisit() {
             </div>
 
             {/* ── Bottom action bar ── */}
-            <div className="dohv-actions">
+            {isAdmin && (
+                <div className="dohv-actions">
                 <button className="dohv-btn dohv-btn--danger" onClick={() => setShowDeleteModal(true)}>
                     🗑️ Hapus
                 </button>
@@ -208,6 +212,8 @@ export default function DetailOrderHomeVisit() {
                     ✏️ Ubah Data
                 </button>
             </div>
+            )}
+            
 
             {/* ── Delete confirm modal ── */}
             {showDeleteModal && (

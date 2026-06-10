@@ -3,14 +3,15 @@ import { useNavigate } from 'react-router-dom';
 import { db } from '../firebase';
 import { collection, onSnapshot, query, where, orderBy } from 'firebase/firestore';
 import './Jadwalhomevisit.css';
+import { useAuth } from '../context/AuthContext';
 
 const HARI = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
 const HARI_FULL = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
-const BULAN = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Ags','Sep','Okt','Nov','Des'];
-const BULAN_FULL = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+const BULAN = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Ags', 'Sep', 'Okt', 'Nov', 'Des'];
+const BULAN_FULL = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
 
 function toDateKey(d) {
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 function getWeekDays(anchor) {
@@ -28,11 +29,14 @@ function getWeekDays(anchor) {
 export default function JadwalHomeVisit() {
   const navigate = useNavigate();
   const today = new Date();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin' || user?.role === 'Admin';
 
   const [anchor, setAnchor] = useState(() => new Date());
   const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
+
 
   // ── Fetch semua booking dari Firestore ──
   useEffect(() => {
@@ -135,7 +139,7 @@ export default function JadwalHomeVisit() {
           <div className="jhv-week-days">
             {weekDays.map((d, i) => {
               const key = toDateKey(d);
-              const isToday    = toDateKey(d) === toDateKey(today);
+              const isToday = toDateKey(d) === toDateKey(today);
               const isSelected = toDateKey(d) === toDateKey(selectedDate);
               const hasBooking = bookings.some(b => b.tanggal === key);
               return (
@@ -205,7 +209,8 @@ export default function JadwalHomeVisit() {
       </div>
 
       {/* FAB tambah */}
-      <button className="jhv-fab" onClick={() => navigate('/tambah-booking')}>+</button>
-    </div>
+      {isAdmin && (
+        <button className="jhv-fab" onClick={() => navigate('/tambah-booking')}>+</button>
+      )}    </div>
   );
 }
