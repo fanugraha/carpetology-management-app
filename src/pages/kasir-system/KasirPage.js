@@ -1,15 +1,13 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, } from "react";
 import {
   collection,
   getDocs,
   addDoc,
   doc,
-  setDoc,
   serverTimestamp,
   query,
   orderBy,
   onSnapshot,
-  Timestamp,
 } from "firebase/firestore";
 import { db } from "../../firebase"; // Sesuaikan path import firebase kamu
 import Navbar from '../../componets/Navbar';  // sesuaikan path-nya
@@ -270,7 +268,6 @@ const fmtDate = (d) => {
   const dt = d?.toDate ? d.toDate() : new Date(d);
   return dt.toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" });
 };
-const todayIso = () => new Date().toISOString().split("T")[0];
 const todayLabel = () =>
   new Date().toLocaleDateString("id-ID", { weekday: "short", day: "numeric", month: "short" });
 
@@ -325,9 +322,11 @@ const mapOrder = (docSnap) => {
       subtotal: Number(it.subtotal || 0),
     })),
     total: Number(d.total_harga || d.total || 0),
+    subtotal: Number(d.subtotal_harga || d.total_harga || d.total || 0), // ← tambah
+    diskon: d.diskon || null,                                             // ← tambah
     metode: d.metode_pembayaran || d.metode || "",
-    statusBayar: d.statusBayar || "Belum Lunas",   // ← payment status
-    status: d.status || "Waiting List",        // ← progres order
+    statusBayar: d.statusBayar || "Belum Lunas",
+    status: d.status || "Waiting List",
     tanggal: d.tanggal || "",
     timestamp: d.timestamp || d.created_at || null,
     catatan: d.catatan || "",
@@ -382,7 +381,13 @@ function StepProduk({ products, loadingProducts, cart, onCartChange, onNext }) {
       onCartChange(
         cart.map((c) =>
           c.produkId === prod.id
-            ? { ...c, qty: c.qty + 1, subtotal: (c.qty + 1) * c.harga * (c.satuan === "meter" ? (c.panjang || 1) * (c.lebar || 1) : 1) }
+            ? {
+              ...c,
+              qty: c.qty + 1,
+              subtotal: c.satuan === "meter"
+                ? c.harga * (c.qty + 1) * (parseFloat(c.luas) || 0)
+                : c.harga * (c.qty + 1),
+            }
             : c
         )
       );
@@ -393,10 +398,10 @@ function StepProduk({ products, loadingProducts, cart, onCartChange, onNext }) {
         satuan: prod.satuan,
         harga: prod.harga,
         qty: 1,
-        panjang: prod.satuan === "meter" ? 0 : 1,
-        lebar: prod.satuan === "meter" ? 0 : 1,
-        luas: prod.satuan === "meter" ? 0 : null,
-        subtotal: prod.satuan === "meter" ? 0 : prod.harga,
+        panjang: null,
+        lebar: null,
+        luas: prod.satuan === "meter" ? "" : null,
+        subtotal: 0,
       }]);
     }
   };
@@ -407,18 +412,22 @@ function StepProduk({ products, loadingProducts, cart, onCartChange, onNext }) {
     } else {
       onCartChange(cart.map((c) => {
         if (c.produkId !== produkId) return c;
-        const base = c.satuan === "meter" ? (c.panjang || 1) * (c.lebar || 1) : 1;
-        return { ...c, qty: val, subtotal: c.harga * val * base };
+        return { ...c, qty: val, subtotal: c.harga * val };
       }));
     }
   };
 
-  const updateMeter = (produkId, field, val) => {
+  const updateLuas = (produkId, val) => {
+    const luas = val === "" ? "" : Math.max(0, parseFloat(val) || 0);
     onCartChange(cart.map((c) => {
       if (c.produkId !== produkId) return c;
-      const updated = { ...c, [field]: parseFloat(val) || 0 };
-      const luas = (updated.panjang || 0) * (updated.lebar || 0);
-      return { ...updated, luas, subtotal: updated.harga * updated.qty * luas };
+      return {
+        ...c,
+        luas,
+        panjang: null,
+        lebar: null,
+        subtotal: c.harga * c.qty * (parseFloat(luas) || 0),
+      };
     }));
   };
 
@@ -501,33 +510,39 @@ function StepProduk({ products, loadingProducts, cart, onCartChange, onNext }) {
 
                       {inCart.satuan === "meter" && (
                         <>
-                          <div className="meter-inputs">
-                            <div className="field" style={{ marginBottom: 0 }}>
-                              <label>Panjang (m)</label>
-                              <input type="number" value={inCart.panjang} min="0" step="0.1"
-                                onChange={(e) => updateMeter(prod.id, "panjang", e.target.value)}
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </div>
-                            <div className="field" style={{ marginBottom: 0 }}>
-                              <label>Lebar (m)</label>
-                              <input type="number" value={inCart.lebar} min="0" step="0.1"
-                                onChange={(e) => updateMeter(prod.id, "lebar", e.target.value)}
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+                            <button
+                              className="qty-btn"
+                              style={{ width: 36, height: 36, fontSize: 18, flexShrink: 0 }}
+                              onClick={(e) => { e.stopPropagation(); updateLuas(prod.id, Math.max(0, (parseFloat(inCart.luas) || 0) - 1)); }}
+                            >−</button>
+                            <input
+                              type="number"
+                              value={inCart.luas === "" || inCart.luas == null ? "" : inCart.luas}
+                              min="0"
+                              step="0.1"
+                              placeholder="Luas m²"
+                              style={{ flex: 1, textAlign: "center", fontWeight: 700, padding: "9px 8px", borderRadius: 10, border: `1.5px solid ${C.border}`, fontSize: 14, fontFamily: "inherit", outline: "none" }}
+                              onChange={(e) => { e.stopPropagation(); updateLuas(prod.id, e.target.value === "" ? "" : parseFloat(e.target.value) || 0); }}
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                            <button
+                              className="qty-btn"
+                              style={{ width: 36, height: 36, fontSize: 18, flexShrink: 0 }}
+                              onClick={(e) => { e.stopPropagation(); updateLuas(prod.id, (parseFloat(inCart.luas) || 0) + 1); }}
+                            >+</button>
+                            <span style={{ fontSize: 11, color: C.muted, flexShrink: 0 }}>m²</span>
                           </div>
-                          <div className="meter-result">
-                            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                              <span className="meter-result-label">
-                                📐 {(inCart.panjang || 0).toFixed(1)}m × {(inCart.lebar || 0).toFixed(1)}m = {(inCart.luas || 0).toFixed(2)} m²
-                              </span>
-                              <span style={{ fontSize: 10, color: C.primary700 }}>
-                                {(inCart.luas || 0).toFixed(2)} m² × {rupiah(inCart.harga)}/m²
-                              </span>
+                          {(parseFloat(inCart.luas) || 0) > 0 && (
+                            <div className="meter-result" style={{ marginTop: 8 }}>
+                              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                                <span className="meter-result-label">
+                                  📐 {(parseFloat(inCart.luas) || 0).toFixed(2)} m² × {rupiah(inCart.harga)}/m²
+                                </span>
+                              </div>
+                              <span className="meter-result-value">{rupiah(inCart.subtotal)}</span>
                             </div>
-                            <span className="meter-result-value">{rupiah(inCart.subtotal)}</span>
-                          </div>
+                          )}
                         </>
                       )}
 
@@ -812,18 +827,17 @@ function StepCustomer({ customers = [], loadingCustomers, onAddCustomer, selecte
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <div>
                     <div style={{ fontSize: 14, fontWeight: 600, color: C.dark }}>{item.nama}</div>
-                    <div style={{ fontSize: 11, color: C.muted }}>
+                    <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
                       {item.satuan === "meter"
-                        ? `${(item.panjang || 0).toFixed(1)}m × ${(item.lebar || 0).toFixed(1)}m`
-                        : `${rupiah(item.harga)}/pcs`}
+                        ? `📐 ${(parseFloat(item.luas) || 0).toFixed(2)} m² · ${rupiah(item.subtotal)}`
+                        : `${rupiah(item.harga)}/pcs · ${item.qty} pcs`}
                     </div>
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <button className="qty-btn" onClick={() => updateItemQty(item.produkId, item.qty - 1)}>−</button>
-                    <span style={{ fontFamily: "'Space Grotesk',sans-serif", fontWeight: 700, fontSize: 16, minWidth: 24, textAlign: "center" }}>
-                      {item.qty}
-                    </span>
-                    <button className="qty-btn" onClick={() => updateItemQty(item.produkId, item.qty + 1)}>+</button>
+                  <div style={{
+                    fontFamily: "'Space Grotesk',sans-serif", fontWeight: 700,
+                    fontSize: 14, color: C.primary700,
+                  }}>
+                    {item.satuan === "meter" ? `${(parseFloat(item.luas) || 0).toFixed(1)} m²` : `×${item.qty}`}
                   </div>
                 </div>
               </div>
@@ -899,7 +913,13 @@ function StepCustomer({ customers = [], loadingCustomers, onAddCustomer, selecte
 }
 // ─── STEP 3: PEMBAYARAN ───────────────────────────────────────────────────────
 function StepPembayaran({ cart, customer, payMethod, setPayMethod, catatan, setCatatan, onNext, onBack, saving }) {
-  const total = cart.reduce((s, c) => s + c.subtotal, 0);
+  const [diskonType, setDiskonType] = useState("persen"); // "persen" | "nominal"
+  const [diskonVal, setDiskonVal] = useState("");
+  const subtotal = cart.reduce((s, c) => s + c.subtotal, 0);
+  const diskonAmount = diskonType === "persen"
+    ? Math.round(subtotal * (parseFloat(diskonVal) || 0) / 100)
+    : Math.min(parseFloat(diskonVal) || 0, subtotal);
+  const total = subtotal - diskonAmount;
 
   return (
     <div className="animate-in" style={{ display: "flex", flexDirection: "column", height: "100%" }}>
@@ -920,7 +940,7 @@ function StepPembayaran({ cart, customer, payMethod, setPayMethod, catatan, setC
                 </div>
                 {item.satuan === "meter" ? (
                   <span style={{ fontSize: 11, color: C.muted }}>
-                    {(item.panjang || 0).toFixed(1)}m × {(item.lebar || 0).toFixed(1)}m = {(item.luas || 0).toFixed(2)}m² × {rupiah(item.harga)}/m²
+                    {(parseFloat(item.luas) || 0).toFixed(2)} m² × {rupiah(item.harga)}/m²
                   </span>
                 ) : (
                   <span style={{ fontSize: 11, color: C.muted }}>
@@ -935,7 +955,34 @@ function StepPembayaran({ cart, customer, payMethod, setPayMethod, catatan, setC
             </div>
           </div>
         </div>
-
+        <div className="section-header">Diskon (Opsional)</div>
+        <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+          {["persen", "nominal"].map(t => (
+            <button
+              key={t}
+              className={`btn btn-sm ${diskonType === t ? "btn-primary" : "btn-secondary"}`}
+              style={{ flex: 1 }}
+              onClick={() => { setDiskonType(t); setDiskonVal(""); }}
+            >
+              {t === "persen" ? "% Persen" : "Rp Nominal"}
+            </button>
+          ))}
+        </div>
+        <div className="field">
+          <input
+            type="number"
+            placeholder={diskonType === "persen" ? "Contoh: 10 (artinya 10%)" : "Contoh: 50000"}
+            value={diskonVal}
+            min="0"
+            max={diskonType === "persen" ? 100 : subtotal}
+            onChange={(e) => setDiskonVal(e.target.value)}
+          />
+          {diskonAmount > 0 && (
+            <div style={{ marginTop: 6, fontSize: 12, color: C.success, fontWeight: 600 }}>
+              ✂️ Hemat {rupiah(diskonAmount)}{diskonType === "persen" ? ` (${diskonVal}%)` : ""}
+            </div>
+          )}
+        </div>
         <div className="section-header">Metode Pembayaran</div>
         <div className="pay-grid">
           {PAY_METHODS.map((m) => (
@@ -964,8 +1011,15 @@ function StepPembayaran({ cart, customer, payMethod, setPayMethod, catatan, setC
       <div className="footer-bar">
         <div className="footer-summary">
           <div>
-            <div className="footer-label">Total Tagihan</div>
+            <div className="footer-label">
+              {diskonAmount > 0
+                ? <span>Subtotal <span style={{ textDecoration: "line-through", color: C.muted }}>{rupiah(subtotal)}</span></span>
+                : "Total Tagihan"}
+            </div>
             <div className="footer-total">{rupiah(total)}</div>
+            {diskonAmount > 0 && (
+              <div style={{ fontSize: 11, color: C.success }}>Diskon: −{rupiah(diskonAmount)}</div>
+            )}
           </div>
           {payMethod && (
             <div className="badge badge-primary">
@@ -979,8 +1033,7 @@ function StepPembayaran({ cart, customer, payMethod, setPayMethod, catatan, setC
             className="btn btn-primary"
             style={{ flex: 1 }}
             disabled={!payMethod || saving}
-            onClick={onNext}
-          >
+            onClick={() => onNext({ diskonType, diskonVal: parseFloat(diskonVal) || 0, diskonAmount })}          >
             {saving ? <><div className="spinner" /> Menyimpan...</> : "Simpan Transaksi ✓"}
           </button>
         </div>
@@ -999,6 +1052,11 @@ function StepSukses({ order, onReset, onViewNota }) {
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  const adaBelumDiukur = order.items.some(it => it.satuan === "meter" && (!it.luas || it.luas === 0));
+  const totalSudah = order.items
+    .filter(it => !(it.satuan === "meter" && (!it.luas || it.luas === 0)))
+    .reduce((s, it) => s + (it.subtotal || 0), 0);
 
   return (
     <div className="animate-in" style={{ display: "flex", flexDirection: "column", height: "100%" }}>
@@ -1030,6 +1088,7 @@ function StepSukses({ order, onReset, onViewNota }) {
             </div>
             <div className="nota-divider" />
             <div className="section-header" style={{ fontSize: 10 }}>Detail Item</div>
+
             {order.items.map((item, i) => {
               const belumDiukur = item.satuan === "meter" && (!item.luas || item.luas === 0);
               return (
@@ -1040,9 +1099,9 @@ function StepSukses({ order, onReset, onViewNota }) {
                   </div>
                   {belumDiukur ? (
                     <span style={{ fontSize: 11, color: C.warning, fontWeight: 600 }}>⚠️ Menunggu pengukuran</span>
-                  ) : item.luas != null ? (
+                  ) : item.satuan === "meter" ? (
                     <span style={{ fontSize: 11, color: C.muted }}>
-                      {(item.panjang || 0).toFixed(1)}m × {(item.lebar || 0).toFixed(1)}m = {(item.luas || 0).toFixed(2)}m² × {rupiah(item.harga)}/m²
+                      📐 {(parseFloat(item.luas) || 0).toFixed(2)} m² × {rupiah(item.harga)}/m²
                     </span>
                   ) : (
                     <span style={{ fontSize: 11, color: C.muted }}>
@@ -1052,54 +1111,41 @@ function StepSukses({ order, onReset, onViewNota }) {
                 </div>
               );
             })}
-            {(() => {
-              const adaBelumDiukur = order.items.some(it => it.satuan === "meter" && (!it.luas || it.luas === 0));
-              const totalSudah = order.items
-                .filter(it => !(it.satuan === "meter" && (!it.luas || it.luas === 0)))
-                .reduce((s, it) => s + (it.subtotal || 0), 0);
-              return adaBelumDiukur ? (
-                <div style={{ background: C.warningBg, borderRadius: 8, padding: "10px 12px", marginTop: 8 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                    <span style={{ fontSize: 12, color: "#92400E" }}>Subtotal sementara</span>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: "#92400E" }}>{rupiah(totalSudah)}</span>
-                  </div>
-                  <div style={{ fontSize: 11, color: "#92400E", fontWeight: 600 }}>
-                    ⚠️ Biaya karpet menyusul setelah pengukuran
-                  </div>
+
+            {/* ── Total — hanya 1x ── */}
+            {adaBelumDiukur ? (
+              <div style={{ background: C.warningBg, borderRadius: 8, padding: "10px 12px", marginTop: 8 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                  <span style={{ fontSize: 12, color: "#92400E" }}>Subtotal sementara</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "#92400E" }}>{rupiah(totalSudah)}</span>
                 </div>
-              ) : (
+                <div style={{ fontSize: 11, color: "#92400E", fontWeight: 600 }}>
+                  ⚠️ Biaya karpet menyusul setelah pengukuran
+                </div>
+              </div>
+            ) : (
+              <div style={{ marginTop: 12 }}>
+                {order.diskon?.amount > 0 && (
+                  <>
+                    <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: `1px dashed ${C.border}` }}>
+                      <span style={{ fontSize: 12, color: C.muted }}>Subtotal</span>
+                      <span style={{ fontSize: 12, color: C.muted }}>{rupiah(order.subtotal)}</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: `1px dashed ${C.border}` }}>
+                      <span style={{ fontSize: 12, color: C.success, fontWeight: 600 }}>
+                        ✂️ Diskon {order.diskon.type === "persen" ? `${order.diskon.nilai}%` : ""}
+                      </span>
+                      <span style={{ fontSize: 12, color: C.success, fontWeight: 600 }}>-{rupiah(order.diskon.amount)}</span>
+                    </div>
+                  </>
+                )}
                 <div className="nota-total-row">
                   <span className="nota-total-label">Total</span>
                   <span className="nota-total-val">{rupiah(order.total)}</span>
                 </div>
-              );
-            })()}
-            {(() => {
-              const adaBelumDiukur = order.items.some(it => it.satuan === "meter" && (!it.luas || it.luas === 0));
-              const totalSudah = order.items
-                .filter(it => !(it.satuan === "meter" && (!it.luas || it.luas === 0)))
-                .reduce((s, it) => s + (it.subtotal || 0), 0);
-              return adaBelumDiukur ? (
-                <div style={{ background: C.warningBg, borderRadius: 8, padding: "10px 12px", marginTop: 8 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                    <span style={{ fontSize: 12, color: "#92400E" }}>Subtotal sementara</span>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: "#92400E" }}>{rupiah(totalSudah)}</span>
-                  </div>
-                  <div style={{ fontSize: 11, color: "#92400E", fontWeight: 600 }}>
-                    ⚠️ Biaya karpet menyusul setelah pengukuran
-                  </div>
-                </div>
-              ) : (
-                <div className="nota-total-row">
-                  <span className="nota-total-label">Total</span>
-                  <span className="nota-total-val">{rupiah(order.total)}</span>
-                </div>
-              );
-            })()}
-            <div className="nota-total-row">
-              <span className="nota-total-label">Total</span>
-              <span className="nota-total-val">{rupiah(order.total)}</span>
-            </div>
+              </div>
+            )}
+
             <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
               <span className={`badge ${order.metode === "Belum Payment" ? "badge-warning" : "badge-success"}`}>
                 {order.metode}
@@ -1131,8 +1177,6 @@ function StepSukses({ order, onReset, onViewNota }) {
   );
 }
 
-
-// ─── NOTA PAGE ─────────────────────────────────────────────────────────────────
 // ─── EDIT NOTA MODAL ──────────────────────────────────────────────────────────
 function EditNotaModal({ order, onClose, onSaved }) {
   const [metode, setMetode] = useState(order.metode || "");
@@ -1177,29 +1221,28 @@ function EditNotaModal({ order, onClose, onSaved }) {
     setSaving(true);
     try {
       const { doc, updateDoc, collection, query, where, getDocs } = await import("firebase/firestore");
+
       const itemsPayload = items.map(it => ({
         produkId: it.produkId || "",
         nama: it.nama,
         satuan: it.satuan,
         qty: it.qty,
         harga: it.harga,
-        panjang: it.satuan === "meter" ? (it.panjang || 0) : null,
-        lebar: it.satuan === "meter" ? (it.lebar || 0) : null,
-        luas: it.satuan === "meter" ? (it.luas || 0) : null,
+        panjang: null,   // ← tidak dipakai lagi
+        lebar: null,     // ← tidak dipakai lagi
+        luas: it.satuan === "meter" ? (parseFloat(it.luas) || 0) : null,
         subtotal: it.subtotal,
       }));
 
       const updatePayload = {
         items: itemsPayload,
         total_harga: totalBaru,
-        statusBayar: statusBayar,
+        statusBayar,
         metode_pembayaran: metode,
       };
 
-      // Update orders
       await updateDoc(doc(db, "orders", order.id), updatePayload);
 
-      // Update transactions jika ada notaId
       if (order.notaId) {
         const txSnap = await getDocs(
           query(collection(db, "transactions"), where("notaId", "==", order.notaId))
@@ -1406,7 +1449,6 @@ function EditNotaModal({ order, onClose, onSaved }) {
 // ─── NOTA PAGE ─────────────────────────────────────────────────────────────────
 function NotaPage({ notaId, orders, onBack }) {
   const order = orders.find((o) => o.notaId === notaId || o.id === notaId);
-  const [printed, setPrinted] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -1521,6 +1563,29 @@ function NotaPage({ notaId, orders, onBack }) {
             );
           })}
 
+          <div>
+            {order.diskon?.amount > 0 && (
+              <>
+                <div style={{ padding: "8px 16px", display: "flex", justifyContent: "space-between", borderTop: `1px solid ${C.border}` }}>
+                  <span style={{ fontSize: 12, color: C.muted }}>Subtotal</span>
+                  <span style={{ fontSize: 12, color: C.muted }}>{rupiah((order.subtotal) || order.total + order.diskon.amount)}</span>
+                </div>
+                <div style={{ padding: "8px 16px", display: "flex", justifyContent: "space-between", background: C.successBg }}>
+                  <span style={{ fontSize: 12, color: "#15803D", fontWeight: 600 }}>
+                    ✂️ Diskon {order.diskon.type === "persen" ? `${order.diskon.nilai}%` : ""}
+                  </span>
+                  <span style={{ fontSize: 12, color: "#15803D", fontWeight: 600 }}>-{rupiah(order.diskon.amount)}</span>
+                </div>
+              </>
+            )}
+            <div style={{ padding: "14px 16px", background: C.primary100, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: 14, fontWeight: 800, color: C.primary700 }}>Total</span>
+              <span style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 20, fontWeight: 800, color: C.primary700 }}>
+                {rupiah(order.total)}
+              </span>
+            </div>
+          </div>
+
           {/* Total */}
           {adaBelumDiukur ? (
             <>
@@ -1562,7 +1627,7 @@ function NotaPage({ notaId, orders, onBack }) {
           {onBack && (
             <button className="btn btn-secondary" style={{ flex: 1 }} onClick={onBack}>← Kembali</button>
           )}
-          <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => { setPrinted(true); window.print(); }}>
+          <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => { window.print(); }}>
             🖨 Cetak Nota
           </button>
         </div>
@@ -1596,9 +1661,24 @@ function NotaPage({ notaId, orders, onBack }) {
 function RiwayatPage({ orders, loadingOrders, onViewNota }) {
   const [search, setSearch] = useState("");
   const [filterMetode, setFilterMetode] = useState("Semua");
+  const BULAN_LABEL = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Ags", "Sep", "Okt", "Nov", "Des"];
+  const now = new Date();
+  const [filterBulan, setFilterBulan] = useState(now.getMonth());
+  const [filterTahun, setFilterTahun] = useState(now.getFullYear());
 
   const metodeOptions = ["Semua", "Tunai", "QRIS", "Transfer", "Belum Payment"];
+
+  const parseOrderDate = (o) => {
+    if (o.timestamp?.toDate) return o.timestamp.toDate();
+    if (o.tanggal) return new Date(o.tanggal);
+    return new Date(0);
+  };
+
   const filtered = orders
+    .filter((o) => {
+      const d = parseOrderDate(o);
+      return d.getMonth() === filterBulan && d.getFullYear() === filterTahun;
+    })
     .filter((o) => {
       const s = search.toLowerCase();
       return (
@@ -1608,47 +1688,163 @@ function RiwayatPage({ orders, loadingOrders, onViewNota }) {
       );
     })
     .filter((o) => filterMetode === "Semua" || o.metode === filterMetode)
-    .sort((a, b) => {
-      // Sort by timestamp desc
-      const ta = a.timestamp?.toDate ? a.timestamp.toDate() : new Date(a.tanggal || 0);
-      const tb = b.timestamp?.toDate ? b.timestamp.toDate() : new Date(b.tanggal || 0);
-      return tb - ta;
-    });
+    .sort((a, b) => parseOrderDate(b) - parseOrderDate(a));
 
-  const totalRevenue = orders.filter(o => o.statusBayar === "Lunas").reduce((s, o) => s + o.total, 0);
-  const totalPiutang = orders.filter(o => o.statusBayar !== "Lunas").reduce((s, o) => s + o.total, 0);
+  const totalRevenue = filtered.filter(o => o.statusBayar === "Lunas").reduce((s, o) => s + o.total, 0);
+  const totalPiutang = filtered.filter(o => o.statusBayar !== "Lunas").reduce((s, o) => s + o.total, 0);
+
+  const exportExcel = async () => {
+    const XLSX = await import("xlsx");
+    const wb = XLSX.utils.book_new();
+
+    // ── Sheet 1: Transaksi (1 baris = 1 order) ──────────────
+    const sheet1 = filtered.map((o) => ({
+      "Tanggal": o.tanggal || "",
+      "Customer": o.customerNama,
+      "No. HP": o.customerHp,
+      "Item (ringkasan)": (o.items || [])
+        .map((it) =>
+          it.satuan === "meter"
+            ? `${it.nama} (${(parseFloat(it.luas) || 0).toFixed(1)}m²)`
+            : `${it.nama} (${it.qty}x)`
+        )
+        .join(" | "),
+      "Subtotal": o.subtotal || o.total,
+      "Diskon (Rp)": o.diskon?.amount || 0,
+      "Total": o.total,
+      "Metode": o.metode,
+      "Status": o.statusBayar,
+      "Catatan": o.catatan || "",
+    }));
+    const ws1 = XLSX.utils.json_to_sheet(sheet1);
+    ws1["!cols"] = [
+      { wch: 14 }, { wch: 22 }, { wch: 16 }, { wch: 40 },
+      { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 24 }
+    ];
+    XLSX.utils.book_append_sheet(wb, ws1, "Transaksi");
+
+    // ── Sheet 2: Produk Terlaris ─────────────────────────────
+    const produkMap = {};
+    filtered.forEach((o) => {
+      (o.items || []).forEach((it) => {
+        if (!produkMap[it.nama]) {
+          produkMap[it.nama] = {
+            "Nama Produk": it.nama,
+            "Satuan": it.satuan === "meter" ? "Meteran" : "Satuan",
+            "Jumlah Order": 0,
+            "Total m²": 0,
+            "Total Pcs": 0,
+            "Total Pendapatan": 0,
+          };
+        }
+        produkMap[it.nama]["Jumlah Order"] += 1;
+        if (it.satuan === "meter") {
+          produkMap[it.nama]["Total m²"] += parseFloat(it.luas) || 0;
+        } else {
+          produkMap[it.nama]["Total Pcs"] += it.qty || 0;
+        }
+        produkMap[it.nama]["Total Pendapatan"] += it.subtotal || 0;
+      });
+    });
+    const sheet2 = Object.values(produkMap)
+      .sort((a, b) => b["Total Pendapatan"] - a["Total Pendapatan"]);
+    const ws2 = XLSX.utils.json_to_sheet(sheet2);
+    ws2["!cols"] = [{ wch: 28 }, { wch: 12 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 18 }];
+    XLSX.utils.book_append_sheet(wb, ws2, "Produk Terlaris");
+
+    // ── Sheet 3: Rekap Bulan ─────────────────────────────────
+    const totalOmzet = filtered.reduce((s, o) => s + o.total, 0);
+    const totalLunas = filtered.filter(o => o.statusBayar === "Lunas")
+      .reduce((s, o) => s + o.total, 0);
+    const totalPiutang = filtered.filter(o => o.statusBayar !== "Lunas")
+      .reduce((s, o) => s + o.total, 0);
+    const totalDiskon = filtered.reduce((s, o) => s + (o.diskon?.amount || 0), 0);
+
+    const sheet3 = [
+      {
+        "Keterangan": "Periode",
+        "Nilai": `${BULAN_LABEL[filterBulan]} ${filterTahun}`
+      },
+      {
+        "Keterangan": "Total Transaksi",
+        "Nilai": filtered.length + " order"
+      },
+      { "Keterangan": "Omzet (Rp)", "Nilai": totalOmzet },
+      { "Keterangan": "Sudah Lunas (Rp)", "Nilai": totalLunas },
+      { "Keterangan": "Piutang (Rp)", "Nilai": totalPiutang },
+      { "Keterangan": "Total Diskon (Rp)", "Nilai": totalDiskon },
+    ];
+    const ws3 = XLSX.utils.json_to_sheet(sheet3);
+    ws3["!cols"] = [{ wch: 22 }, { wch: 20 }];
+    XLSX.utils.book_append_sheet(wb, ws3, "Rekap Bulan");
+
+    // ── Download ─────────────────────────────────────────────
+    XLSX.writeFile(wb,
+      `Carpetology_${BULAN_LABEL[filterBulan]}_${filterTahun}.xlsx`
+    );
+  };
+
 
   return (
     <div className="animate-in" style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <div className="step-content" style={{ flex: 1 }}>
-        {/* Stats */}
+
+        {/* ── Filter Bulan ── */}
+        <div style={{ display: "flex", gap: 8, marginBottom: 16, alignItems: "center" }}>
+          <select
+            value={filterBulan}
+            onChange={(e) => setFilterBulan(Number(e.target.value))}
+            style={{ flex: 1, padding: "9px 12px", borderRadius: 10, border: `1.5px solid ${C.border}`, fontSize: 13, fontFamily: "inherit", background: C.white, color: C.dark, outline: "none" }}
+          >
+            {BULAN_LABEL.map((b, i) => (
+              <option key={i} value={i}>{b}</option>
+            ))}
+          </select>
+          <select
+            value={filterTahun}
+            onChange={(e) => setFilterTahun(Number(e.target.value))}
+            style={{ width: 90, padding: "9px 12px", borderRadius: 10, border: `1.5px solid ${C.border}`, fontSize: 13, fontFamily: "inherit", background: C.white, color: C.dark, outline: "none" }}
+          >
+            {[2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={exportExcel}
+            disabled={filtered.length === 0}
+            style={{ whiteSpace: "nowrap", flexShrink: 0 }}
+          >
+            📥 Excel
+          </button>
+        </div>
+
+        {/* ── Stats bulan terpilih ── */}
         <div className="mini-stats">
           <div className="mini-stat">
-            <div className="mini-stat-label">Total Transaksi</div>
-            <div className="mini-stat-value">{orders.length}</div>
+            <div className="mini-stat-label">Transaksi {BULAN_LABEL[filterBulan]}</div>
+            <div className="mini-stat-value">{filtered.length}</div>
           </div>
           <div className="mini-stat">
-            <div className="mini-stat-label">Total Omzet</div>
-            <div className="mini-stat-value" style={{ fontSize: 14 }}>{rupiah(totalRevenue + totalPiutang)}</div>
+            <div className="mini-stat-label">Omzet {BULAN_LABEL[filterBulan]}</div>
+            <div className="mini-stat-value" style={{ fontSize: 13 }}>{rupiah(totalRevenue + totalPiutang)}</div>
           </div>
           <div className="mini-stat">
             <div className="mini-stat-label" style={{ color: "#15803D" }}>✅ Lunas</div>
-            <div className="mini-stat-value" style={{ color: "#15803D", fontSize: 14 }}>{rupiah(totalRevenue)}</div>
+            <div className="mini-stat-value" style={{ color: "#15803D", fontSize: 13 }}>{rupiah(totalRevenue)}</div>
           </div>
           <div className="mini-stat">
             <div className="mini-stat-label" style={{ color: "#D97706" }}>⏳ Piutang</div>
-            <div className="mini-stat-value" style={{ color: "#D97706", fontSize: 14 }}>{rupiah(totalPiutang)}</div>
+            <div className="mini-stat-value" style={{ color: "#D97706", fontSize: 13 }}>{rupiah(totalPiutang)}</div>
           </div>
         </div>
 
-        {/* Search */}
+        {/* ── Search ── */}
         <div className="search-wrap">
           <span className="search-icon">🔍</span>
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cari nama, HP, atau ID..." />
           {search && <button className="search-clear" onClick={() => setSearch("")}>×</button>}
         </div>
 
-        {/* Filter chips */}
+        {/* ── Filter metode ── */}
         <div className="tab-chips">
           {metodeOptions.map((m) => (
             <div key={m} className={`tab-chip ${filterMetode === m ? "active" : ""}`} onClick={() => setFilterMetode(m)}>
@@ -1664,7 +1860,12 @@ function RiwayatPage({ orders, loadingOrders, onViewNota }) {
           </div>
         ) : (
           <>
-            <div className="section-header">{filtered.length} transaksi</div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <div className="section-header" style={{ margin: 0 }}>
+                {filtered.length} transaksi · {BULAN_LABEL[filterBulan]} {filterTahun}
+              </div>
+            </div>
+
             {filtered.map((order) => (
               <div key={order.id} className="history-card" onClick={() => onViewNota(order.notaId || order.id)}>
                 <div className="history-top">
@@ -1685,17 +1886,25 @@ function RiwayatPage({ orders, loadingOrders, onViewNota }) {
                   ))}
                 </div>
                 <div className="history-bottom">
-                  <div style={{ display: "flex", gap: 6 }}>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                     <span className="badge badge-gray" style={{ fontSize: 10 }}>{order.metode}</span>
+                    {order.diskon?.amount > 0 && (
+                      <span className="badge badge-warning" style={{ fontSize: 10 }}>
+                        ✂️ -{rupiah(order.diskon.amount)}
+                      </span>
+                    )}
                   </div>
                   <div className="history-total">{rupiah(order.total)}</div>
                 </div>
               </div>
             ))}
+
             {filtered.length === 0 && (
               <div className="empty-state">
                 <div className="empty-icon">📋</div>
-                <div className="empty-text">Belum ada transaksi</div>
+                <div className="empty-text">
+                  Belum ada transaksi di {BULAN_LABEL[filterBulan]} {filterTahun}
+                </div>
               </div>
             )}
           </>
@@ -1823,44 +2032,44 @@ export default function App() {
   };
 
   // ── Save Order to Firestore ────────────────────────────────────────────────
-  const handleSimpan = async () => {
+  const handleSimpan = async ({ diskonType, diskonVal, diskonAmount }) => {
     setSavingOrder(true);
     try {
-      const total = cart.reduce((s, c) => s + c.subtotal, 0);
+      const subtotal = cart.reduce((s, c) => s + c.subtotal, 0);
+      const total = subtotal - diskonAmount;
       const notaId = "NOTA-" + genId();
       const metodeLabel = PAY_METHODS.find((m) => m.id === payMethod)?.label || payMethod;
       const statusBayar = payMethod === "belum" ? "Belum Lunas" : "Lunas";
       const BULAN = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Ags", "Sep", "Okt", "Nov", "Des"];
       const now = new Date();
-      const tanggalIndo = `${String(now.getDate()).padStart(2, '0')} ${BULAN[now.getMonth()]} ${now.getFullYear()}`;
+      const tanggalIndo = `${String(now.getDate()).padStart(2, "0")} ${BULAN[now.getMonth()]} ${now.getFullYear()}`;
 
-      // Items payload — strip internal-only fields
       const itemsPayload = cart.map((c) => ({
         produkId: c.produkId,
         nama: c.nama,
         satuan: c.satuan,
         qty: c.qty,
-        // Untuk produk meter: simpan P, L, dan luas agar nota bisa tampilkan formula
-        panjang: c.satuan === "meter" ? (c.panjang || 0) : null,
-        lebar: c.satuan === "meter" ? (c.lebar || 0) : null,
-        luas: c.luas ?? null,
+        panjang: null,
+        lebar: null,
+        luas: c.satuan === "meter" ? (parseFloat(c.luas) || 0) : null,
         harga: c.harga,
         subtotal: c.subtotal,
       }));
 
-      // Write to `orders` collection — matching existing Firestore schema
       const orderPayload = {
-        // customer info
-        customer_id: doc(db, "customers", customer.id), // store as reference
+        customer_id: doc(db, "customers", customer.id),
         nama: customer.nama,
         hp: customer.hp,
-        // items
         items: itemsPayload,
-        // financials
+        subtotal_harga: subtotal,
+        diskon: {
+          type: diskonType,
+          nilai: diskonVal,
+          amount: diskonAmount,
+        },
         total_harga: total,
         metode_pembayaran: metodeLabel,
         statusBayar,
-        // metadata
         status: "Waiting List",
         tanggal: tanggalIndo,
         timestamp: serverTimestamp(),
@@ -1870,18 +2079,23 @@ export default function App() {
 
       const docRef = await addDoc(collection(db, "orders"), orderPayload);
 
-      // Also write to `transactions` collection (mirrors schema from screenshot)
       await addDoc(collection(db, "transactions"), {
         customer_id: doc(db, "customers", customer.id),
-    nama: customer.nama,   // ← tambah ini
-    hp: customer.hp,       // ← tambah ini
-    items: itemsPayload,
-    metode_pembayaran: metodeLabel,
-    status_order: "Waiting List",
-    total_harga: total,
-    created_at: serverTimestamp(),
-    notaId,
-    order_id: docRef.id,
+        nama: customer.nama,
+        hp: customer.hp,
+        items: itemsPayload,
+        subtotal_harga: subtotal,
+        diskon: {
+          type: diskonType,
+          nilai: diskonVal,
+          amount: diskonAmount,
+        },
+        metode_pembayaran: metodeLabel,
+        status_order: "Waiting List",
+        total_harga: total,
+        created_at: serverTimestamp(),
+        notaId,
+        order_id: docRef.id,
       });
 
       const newOrder = {
@@ -1890,9 +2104,12 @@ export default function App() {
         customerNama: customer.nama,
         customerHp: customer.hp,
         items: itemsPayload,
+        subtotal,
+        diskon: { type: diskonType, nilai: diskonVal, amount: diskonAmount },
         total,
         metode: metodeLabel,
-        status: statusBayar,
+        statusBayar,
+        status: "Waiting List",
         tanggal: tanggalIndo,
         catatan,
         notaId,

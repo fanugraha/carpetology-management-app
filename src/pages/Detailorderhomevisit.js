@@ -205,15 +205,14 @@ export default function DetailOrderHomeVisit() {
             {/* ── Bottom action bar ── */}
             {isAdmin && (
                 <div className="dohv-actions">
-                <button className="dohv-btn dohv-btn--danger" onClick={() => setShowDeleteModal(true)}>
-                    🗑️ Hapus
-                </button>
-                <button className="dohv-btn dohv-btn--primary" onClick={() => navigate(`/admin/home-visit/${id}/ubah`)}>
-                    ✏️ Ubah Data
-                </button>
-            </div>
+                    <button className="dohv-btn dohv-btn--danger" onClick={() => setShowDeleteModal(true)}>
+                        🗑️ Hapus
+                    </button>
+                    <button className="dohv-btn dohv-btn--primary" onClick={() => navigate(`/admin/home-visit/${id}/ubah`)}>
+                        ✏️ Ubah Data
+                    </button>
+                </div>
             )}
-            
 
             {/* ── Delete confirm modal ── */}
             {showDeleteModal && (
