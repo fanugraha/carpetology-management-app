@@ -1,9 +1,3 @@
-// ─── KASIR APP — FIXED VERSION ───────────────────────────────────────────────
-// Perbaikan:
-// 1. Search bar UI diperbaiki (icon & input tidak bertabrakan)
-// 2. Semua emoji/emoticon diganti dengan Lucide React icons
-// 3. Struktur CSS search-wrap direfaktor agar konsisten
-
 import { useState, useEffect, useRef } from "react";
 import {
   collection, getDocs, addDoc, doc, serverTimestamp,
@@ -13,7 +7,7 @@ import {
   Search, X, ShoppingCart, ClipboardList, Package, Users, CreditCard,
   FileText, CheckCircle, AlertCircle, Clock, Trash2, Plus, Minus,
   ChevronRight, Phone, Printer, Edit3, Copy, MessageCircle,
-  Ruler, Layers, Truck, Banknote, QrCode, Building2,
+  Ruler, Layers, Truck, Banknote, QrCode, Building2, Home,
   Loader2, Eye, Download, ArrowLeft, ChevronDown,
 } from "lucide-react";
 import { db } from "../../firebase";
@@ -800,7 +794,7 @@ function StepCustomer({ customers = [], loadingCustomers, onAddCustomer, selecte
 
             <div className="section-header">Jumlah Item</div>
             <div style={{ background: C.primary50, border: `1px solid ${C.primary200}`, borderRadius: 10, padding: "10px 14px", fontSize: 12, color: C.primary700, marginBottom: 14, display: "flex", alignItems: "center", gap: 6 }}>
-              <AlertCircle size={14} /> Khusus karpet, ukuran bisa diisi 0 dulu dan diupdate setelah pengukuran.
+              <AlertCircle size={14} /> Khusus karpet, ukuran bisa diisi estimasi dahulu dan diupdate setelah pengukuran.
             </div>
 
             {cart.map((item) => (
@@ -887,15 +881,109 @@ function StepCustomer({ customers = [], loadingCustomers, onAddCustomer, selecte
 function StepPembayaran({ cart, customer, payMethod, setPayMethod, catatan, setCatatan, onNext, onBack, saving }) {
   const [diskonType, setDiskonType] = useState("persen");
   const [diskonVal, setDiskonVal] = useState("");
+  const [isHomeVisit, setIsHomeVisit] = useState(false);   // ← BARU
+
   const subtotal = cart.reduce((s, c) => s + c.subtotal, 0);
   const diskonAmount = diskonType === "persen"
     ? Math.round(subtotal * (parseFloat(diskonVal) || 0) / 100)
     : Math.min(parseFloat(diskonVal) || 0, subtotal);
   const total = subtotal - diskonAmount;
 
+  // Kirim isHomeVisit ke parent lewat onNext
+  const handleNext = () =>
+    onNext({ diskonType, diskonVal: parseFloat(diskonVal) || 0, diskonAmount, isHomeVisit });
+
   return (
     <div className="animate-in" style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <div className="step-content" style={{ flex: 1 }}>
+
+        {/* ── TIPE LAYANAN TOGGLE ─────────────────────────────────────────── */}
+        <div className="section-header">Tipe Layanan</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 20 }}>
+          {/* Laundry biasa */}
+          <div
+            onClick={() => setIsHomeVisit(false)}
+            style={{
+              border: `2px solid ${!isHomeVisit ? C.primary : C.border}`,
+              borderRadius: 14,
+              padding: "14px 12px",
+              cursor: "pointer",
+              background: !isHomeVisit ? C.primary100 : C.white,
+              textAlign: "center",
+              transition: "all .15s",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}>
+              {/* pakai icon WashingMachine — import dari lucide kalau belum ada */}
+              <Layers size={24} color={!isHomeVisit ? C.primary700 : C.muted} />
+            </div>
+            <div style={{ fontSize: 13, fontWeight: 800, color: !isHomeVisit ? C.primary700 : C.dark }}>
+              Laundry
+            </div>
+            <div style={{ fontSize: 10, color: !isHomeVisit ? C.primary700 : C.muted, marginTop: 3 }}>
+              Antar ke toko
+            </div>
+            {!isHomeVisit && (
+              <div style={{ marginTop: 6, display: "flex", justifyContent: "center" }}>
+                <CheckCircle size={14} color={C.primary} />
+              </div>
+            )}
+          </div>
+
+          {/* Home Visit */}
+          <div
+            onClick={() => setIsHomeVisit(true)}
+            style={{
+              border: `2px solid ${isHomeVisit ? "#F59E0B" : C.border}`,
+              borderRadius: 14,
+              padding: "14px 12px",
+              cursor: "pointer",
+              background: isHomeVisit ? "#FEF3C7" : C.white,
+              textAlign: "center",
+              transition: "all .15s",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}>
+              <Home size={24} color={isHomeVisit ? "#D97706" : C.muted} />
+            </div>
+            <div style={{ fontSize: 13, fontWeight: 800, color: isHomeVisit ? "#92400E" : C.dark }}>
+              Home Visit
+            </div>
+            <div style={{ fontSize: 10, color: isHomeVisit ? "#D97706" : C.muted, marginTop: 3 }}>
+              Cuci di tempat
+            </div>
+            {isHomeVisit && (
+              <div style={{ marginTop: 6, display: "flex", justifyContent: "center" }}>
+                <CheckCircle size={14} color="#D97706" />
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Banner info jika Home Visit */}
+        {isHomeVisit && (
+          <div style={{
+            background: "#FEF3C7",
+            border: "1px solid #FCD34D",
+            borderRadius: 10,
+            padding: "10px 14px",
+            marginBottom: 16,
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 8,
+            fontSize: 12,
+            color: "#92400E",
+            fontWeight: 600,
+          }}>
+            <AlertCircle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+            <span>
+              Transaksi <strong>Home Visit</strong> langsung selesai — tidak masuk antrian cuci
+              dan tidak tampil di halaman tracking pelanggan.
+            </span>
+          </div>
+        )}
+
+        {/* ── RINGKASAN ORDER ─────────────────────────────────────────────── */}
         <div className="section-header">Ringkasan Order</div>
         <div className="nota-card" style={{ marginBottom: 20 }}>
           <div style={{ padding: "14px 16px" }}>
@@ -911,9 +999,13 @@ function StepPembayaran({ cart, customer, payMethod, setPayMethod, catatan, setC
                   <span className="nota-item-price">{rupiah(item.subtotal)}</span>
                 </div>
                 {item.satuan === "meter" ? (
-                  <span style={{ fontSize: 11, color: C.muted }}>{(parseFloat(item.luas) || 0).toFixed(2)} m² × {rupiah(item.harga)}/m²</span>
+                  <span style={{ fontSize: 11, color: C.muted }}>
+                    {(parseFloat(item.luas) || 0).toFixed(2)} m² × {rupiah(item.harga)}/m²
+                  </span>
                 ) : (
-                  <span style={{ fontSize: 11, color: C.muted }}>{item.qty} pcs × {rupiah(item.harga)}</span>
+                  <span style={{ fontSize: 11, color: C.muted }}>
+                    {item.qty} pcs × {rupiah(item.harga)}
+                  </span>
                 )}
               </div>
             ))}
@@ -924,19 +1016,29 @@ function StepPembayaran({ cart, customer, payMethod, setPayMethod, catatan, setC
           </div>
         </div>
 
+        {/* ── DISKON ──────────────────────────────────────────────────────── */}
         <div className="section-header">Diskon (Opsional)</div>
         <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
           {["persen", "nominal"].map(t => (
-            <button key={t} className={`btn btn-sm ${diskonType === t ? "btn-primary" : "btn-secondary"}`} style={{ flex: 1 }}
-              onClick={() => { setDiskonType(t); setDiskonVal(""); }}>
+            <button
+              key={t}
+              className={`btn btn-sm ${diskonType === t ? "btn-primary" : "btn-secondary"}`}
+              style={{ flex: 1 }}
+              onClick={() => { setDiskonType(t); setDiskonVal(""); }}
+            >
               {t === "persen" ? "% Persen" : "Rp Nominal"}
             </button>
           ))}
         </div>
         <div className="field">
-          <input type="number" placeholder={diskonType === "persen" ? "Contoh: 10 (artinya 10%)" : "Contoh: 50000"}
-            value={diskonVal} min="0" max={diskonType === "persen" ? 100 : subtotal}
-            onChange={(e) => setDiskonVal(e.target.value)} />
+          <input
+            type="number"
+            placeholder={diskonType === "persen" ? "Contoh: 10 (artinya 10%)" : "Contoh: 50000"}
+            value={diskonVal}
+            min="0"
+            max={diskonType === "persen" ? 100 : subtotal}
+            onChange={(e) => setDiskonVal(e.target.value)}
+          />
           {diskonAmount > 0 && (
             <div style={{ marginTop: 6, fontSize: 12, color: C.success, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
               <CheckCircle size={12} /> Hemat {rupiah(diskonAmount)}{diskonType === "persen" ? ` (${diskonVal}%)` : ""}
@@ -944,12 +1046,17 @@ function StepPembayaran({ cart, customer, payMethod, setPayMethod, catatan, setC
           )}
         </div>
 
+        {/* ── METODE PEMBAYARAN ────────────────────────────────────────────── */}
         <div className="section-header">Metode Pembayaran</div>
         <div className="pay-grid">
           {PAY_METHODS.map((m) => {
             const Icon = m.Icon;
             return (
-              <div key={m.id} className={`pay-option ${payMethod === m.id ? "selected" : ""}`} onClick={() => setPayMethod(m.id)}>
+              <div
+                key={m.id}
+                className={`pay-option ${payMethod === m.id ? "selected" : ""}`}
+                onClick={() => setPayMethod(m.id)}
+              >
                 <div className="pay-option-icon"><Icon size={24} /></div>
                 <div className="pay-option-name">{m.label}</div>
                 <div className="pay-option-sub">{m.sub}</div>
@@ -958,12 +1065,18 @@ function StepPembayaran({ cart, customer, payMethod, setPayMethod, catatan, setC
           })}
         </div>
 
+        {/* ── CATATAN ──────────────────────────────────────────────────────── */}
         <div className="field" style={{ marginTop: 16 }}>
           <label>Catatan (opsional)</label>
-          <input placeholder="Mis: antar jam 10, waiting list, dll" value={catatan} onChange={(e) => setCatatan(e.target.value)} />
+          <input
+            placeholder="Mis: antar jam 10, waiting list, dll"
+            value={catatan}
+            onChange={(e) => setCatatan(e.target.value)}
+          />
         </div>
       </div>
 
+      {/* ── FOOTER ───────────────────────────────────────────────────────────── */}
       <div className="footer-bar">
         <div className="footer-summary">
           <div>
@@ -973,17 +1086,42 @@ function StepPembayaran({ cart, customer, payMethod, setPayMethod, catatan, setC
                 : "Total Tagihan"}
             </div>
             <div className="footer-total">{rupiah(total)}</div>
-            {diskonAmount > 0 && <div style={{ fontSize: 11, color: C.success }}>Diskon: −{rupiah(diskonAmount)}</div>}
+            {diskonAmount > 0 && (
+              <div style={{ fontSize: 11, color: C.success }}>Diskon: −{rupiah(diskonAmount)}</div>
+            )}
           </div>
-          {payMethod && (
-            <div className="badge badge-primary">{PAY_METHODS.find((m) => m.id === payMethod)?.label}</div>
-          )}
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+            {payMethod && (
+              <div className="badge badge-primary">
+                {PAY_METHODS.find((m) => m.id === payMethod)?.label}
+              </div>
+            )}
+            {isHomeVisit && (
+              <div style={{
+                background: "#FEF3C7", color: "#92400E",
+                fontSize: 10, fontWeight: 700, padding: "3px 8px",
+                borderRadius: 6, border: "1px solid #FCD34D",
+                display: "flex", alignItems: "center", gap: 4,
+              }}>
+                <Home size={10} /> Home Visit
+              </div>
+            )}
+          </div>
         </div>
         <div style={{ display: "flex", gap: 10 }}>
-          <button className="btn btn-secondary" style={{ width: 80 }} onClick={onBack}><ArrowLeft size={14} /> Back</button>
-          <button className="btn btn-primary" style={{ flex: 1 }} disabled={!payMethod || saving}
-            onClick={() => onNext({ diskonType, diskonVal: parseFloat(diskonVal) || 0, diskonAmount })}>
-            {saving ? <><Loader2 size={16} className="spinning" /> Menyimpan...</> : <><CheckCircle size={16} /> Simpan Transaksi</>}
+          <button className="btn btn-secondary" style={{ width: 80 }} onClick={onBack}>
+            <ArrowLeft size={14} /> Back
+          </button>
+          <button
+            className="btn btn-primary"
+            style={{ flex: 1 }}
+            disabled={!payMethod || saving}
+            onClick={handleNext}
+          >
+            {saving
+              ? <><Loader2 size={16} className="spinning" /> Menyimpan...</>
+              : <><CheckCircle size={16} /> Simpan Transaksi</>
+            }
           </button>
         </div>
       </div>
@@ -995,6 +1133,7 @@ function StepPembayaran({ cart, customer, payMethod, setPayMethod, catatan, setC
 function StepSukses({ order, onReset, onViewNota }) {
   const [copied, setCopied] = useState(false);
   const notaUrl = `${window.location.origin}/nota/${order.notaId}`;
+  const isHomeVisit = order.layananType === "home_visit";  // ← cek tipe layanan
 
   const copyLink = () => {
     navigator.clipboard?.writeText(notaUrl).catch(() => { });
@@ -1013,12 +1152,26 @@ function StepSukses({ order, onReset, onViewNota }) {
     const subtotal = order.items.reduce((s, it) => s + (it.subtotal || 0), 0);
     const diskonAmount = order.diskon?.amount || 0;
     const totalAkhir = subtotal - diskonAmount;
-    const adaBelumDiukur = order.items.some(it => it.satuan === "meter" && (!it.luas || it.luas === 0));
     const diskonLine = diskonAmount > 0 ? `Diskon: -${fmt(diskonAmount)}\n` : "";
+    const metodeLabel = order.metode || "Tunai";
+
+    // ── Pesan WA berbeda untuk Home Visit ──────────────────────────────────
+    if (isHomeVisit) {
+      return (
+        `Halo ${order.customerNama}, terima kasih sudah mempercayakan perawatan ke *Carpetology*!\n\n` +
+        `Berikut nota layanan *Home Visit* Anda:\n\n${itemLines}\n\n` +
+        `${diskonAmount > 0 ? `Subtotal: ${fmt(subtotal)}\n${diskonLine}` : ""}` +
+        `Total: *${fmt(totalAkhir)}*\nPembayaran: ${metodeLabel} ✅ Lunas\n\n` +
+        `Layanan telah selesai dikerjakan di tempat Anda.\n\n` +
+        `Lihat nota digital: ${notaUrl}\n\nTerima kasih — Carpetology`
+      );
+    }
+
+    // ── Pesan WA laundry biasa (sama seperti sebelumnya) ───────────────────
+    const adaBelumDiukur = order.items.some(it => it.satuan === "meter" && (!it.luas || it.luas === 0));
     const totalLine = adaBelumDiukur
       ? `Total sementara: *${fmt(totalAkhir)}* (menyusul setelah pengukuran)`
       : `${diskonAmount > 0 ? `Subtotal: ${fmt(subtotal)}\n${diskonLine}` : ""}Total: *${fmt(totalAkhir)}*`;
-    const metodeLabel = order.metode || "Belum Payment";
     const statusBayar = order.statusBayar === "Lunas" ? "Lunas" : "Belum lunas";
     return (
       `Halo ${order.customerNama}, terima kasih sudah mempercayakan cucian Anda ke *Carpetology*!\n\n` +
@@ -1034,20 +1187,51 @@ function StepSukses({ order, onReset, onViewNota }) {
     window.open(`https://wa.me/${hp}?text=${encodeURIComponent(buildWAMessage())}`, "_blank");
   };
 
-  const adaBelumDiukur = order.items.some(it => it.satuan === "meter" && (!it.luas || it.luas === 0));
-  const totalSudah = order.items.filter(it => !(it.satuan === "meter" && (!it.luas || it.luas === 0))).reduce((s, it) => s + (it.subtotal || 0), 0);
+  const adaBelumDiukur = !isHomeVisit && order.items.some(it => it.satuan === "meter" && (!it.luas || it.luas === 0));
+  const totalSudah = order.items
+    .filter(it => !(it.satuan === "meter" && (!it.luas || it.luas === 0)))
+    .reduce((s, it) => s + (it.subtotal || 0), 0);
 
   return (
     <div className="animate-in" style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <div className="step-content" style={{ flex: 1 }}>
+
+        {/* ── SUCCESS HEADER ── */}
         <div className="success-screen">
-          <div className="success-icon"><CheckCircle size={40} /></div>
+          <div className="success-icon" style={{ background: isHomeVisit ? "#FEF3C7" : C.successBg }}>
+            {isHomeVisit
+              ? <Home size={40} color="#D97706" />
+              : <CheckCircle size={40} color={C.success} />
+            }
+          </div>
           <div className="success-title">Transaksi Berhasil!</div>
-          <div className="success-sub">Data order untuk <strong>{order.customerNama}</strong> berhasil disimpan.</div>
+          <div className="success-sub">
+            {isHomeVisit
+              ? <>Layanan <strong>Home Visit</strong> untuk <strong>{order.customerNama}</strong> selesai dikerjakan.</>
+              : <>Data order untuk <strong>{order.customerNama}</strong> berhasil disimpan.</>
+            }
+          </div>
+
+          {/* Badge Home Visit di bawah subtitle */}
+          {isHomeVisit && (
+            <div style={{
+              display: "inline-flex", alignItems: "center", gap: 6,
+              background: "#FEF3C7", color: "#92400E",
+              border: "1.5px solid #FCD34D",
+              borderRadius: 20, padding: "6px 16px",
+              fontSize: 12, fontWeight: 700, marginTop: 4,
+            }}>
+              <Home size={13} /> Home Visit · Selesai di Tempat
+            </div>
+          )}
         </div>
 
-        {/* WA button */}
-        <div style={{ background: "#dcfce7", border: "2px solid #22c55e", borderRadius: 16, padding: "16px", marginBottom: 16, display: "flex", flexDirection: "column", gap: 10 }}>
+        {/* ── WA BUTTON ── */}
+        <div style={{
+          background: "#dcfce7", border: "2px solid #22c55e",
+          borderRadius: 16, padding: "16px", marginBottom: 16,
+          display: "flex", flexDirection: "column", gap: 10,
+        }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <div style={{ width: 40, height: 40, borderRadius: 12, background: "#22c55e", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
               <MessageCircle size={20} color="white" />
@@ -1057,22 +1241,30 @@ function StepSukses({ order, onReset, onViewNota }) {
               <div style={{ fontSize: 11, color: "#166534", marginTop: 1 }}>Otomatis ke {order.customerHp || "-"}</div>
             </div>
           </div>
-          <button onClick={handleKirimWA} style={{ width: "100%", padding: "13px", borderRadius: 12, border: "none", background: "#25D366", color: "#fff", fontSize: 14, fontWeight: 800, fontFamily: "inherit", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+          <button
+            onClick={handleKirimWA}
+            style={{ width: "100%", padding: "13px", borderRadius: 12, border: "none", background: "#25D366", color: "#fff", fontSize: 14, fontWeight: 800, fontFamily: "inherit", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
+          >
             <MessageCircle size={18} /> Kirim Pesan WA + Nota
           </button>
         </div>
 
-        {/* Nota ringkasan */}
+        {/* ── NOTA RINGKASAN ── */}
         <div className="nota-card" style={{ marginBottom: 16 }}>
           <div className="nota-header">
             <div className="nota-brand"><Layers size={22} /> Carpetology</div>
-            <div className="nota-tagline">Nota Cuci Karpet & Laundry</div>
-            <div style={{ marginTop: 8, fontSize: 11, color: "#6B8894" }}>{order.notaId} • {order.tanggal}</div>
+            <div className="nota-tagline">
+              {isHomeVisit ? "Nota Layanan Home Visit" : "Nota Cuci Karpet & Laundry"}
+            </div>
+            <div style={{ marginTop: 8, fontSize: 11, color: "#6B8894" }}>
+              {order.notaId} • {order.tanggal}
+            </div>
           </div>
           <div className="nota-body">
             <div className="nota-row"><span className="nota-key">Customer</span><span className="nota-val">{order.customerNama}</span></div>
             <div className="nota-row"><span className="nota-key">No. HP</span><span className="nota-val">{order.customerHp}</span></div>
             <div className="nota-divider" />
+
             {order.items.map((item, i) => {
               const belumDiukur = item.satuan === "meter" && (!item.luas || item.luas === 0);
               return (
@@ -1095,6 +1287,7 @@ function StepSukses({ order, onReset, onViewNota }) {
                 </div>
               );
             })}
+
             {adaBelumDiukur ? (
               <div style={{ background: "#FEF3C7", borderRadius: 8, padding: "10px 12px", marginTop: 8 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
@@ -1111,14 +1304,34 @@ function StepSukses({ order, onReset, onViewNota }) {
                 <span className="nota-total-val">{rupiah(order.total)}</span>
               </div>
             )}
-            <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-              <span className={`badge ${order.metode === "Belum Payment" ? "badge-warning" : "badge-success"}`}>{order.metode}</span>
-              <span className="badge badge-gray">Waiting List</span>
+
+            {/* ── BADGE STATUS ── */}
+            <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+              <span className={`badge ${order.metode === "Belum Payment" ? "badge-warning" : "badge-success"}`}>
+                {order.metode}
+              </span>
+              {isHomeVisit ? (
+                // Home Visit: badge selesai (bukan Waiting List)
+                <>
+                  <span className="badge badge-success" style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <CheckCircle size={10} /> Lunas
+                  </span>
+                  <span style={{
+                    display: "inline-flex", alignItems: "center", gap: 4,
+                    padding: "3px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700,
+                    background: "#FEF3C7", color: "#92400E", border: "1px solid #FCD34D",
+                  }}>
+                    <Home size={10} /> Home Visit
+                  </span>
+                </>
+              ) : (
+                <span className="badge badge-gray">Waiting List</span>
+              )}
             </div>
           </div>
         </div>
 
-        {/* Link nota */}
+        {/* ── LINK NOTA ── */}
         <div className="nota-link-box">
           <div className="nota-link-text" style={{ fontSize: 11, wordBreak: "break-all" }}>{notaUrl}</div>
           <button className="btn btn-sm btn-ghost" onClick={copyLink} style={{ gap: 4 }}>
@@ -1128,6 +1341,7 @@ function StepSukses({ order, onReset, onViewNota }) {
         {copied && <div className="toast"><CheckCircle size={14} /> Link nota berhasil disalin!</div>}
       </div>
 
+      {/* ── FOOTER ── */}
       <div className="footer-bar">
         <button className="btn btn-ghost btn-full" onClick={() => onViewNota(order.notaId)} style={{ gap: 6 }}>
           <Eye size={16} /> Lihat Halaman Nota
@@ -1318,11 +1532,31 @@ function NotaPage({ notaId, orders, onBack }) {
   const isAdmin = user?.role === 'admin' || user?.role === 'Admin';
   const canGoBack = isAdmin && onBack;
   const canEdit = isAdmin;
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showEdit, setShowEdit] = useState(false);
   const [saved, setSaved] = useState(false);
+
+  const handleHapus = async () => {
+    setDeleting(true);
+    try {
+      const { collection, query, where, getDocs, deleteDoc, doc } = await import("firebase/firestore");
+      const q = query(collection(db, "transactions"), where("notaId", "==", notaId));
+      const snap = await getDocs(q);
+      for (const d of snap.docs) {
+        await deleteDoc(doc(db, "transactions", d.id));
+      }
+      onBack(); // kembali ke riwayat setelah hapus
+    } catch (e) {
+      alert("Gagal menghapus nota: " + e.message);
+    } finally {
+      setDeleting(false);
+      setShowDeleteConfirm(false);
+    }
+  };
 
   useEffect(() => {
     let unsub = null;
@@ -1492,9 +1726,46 @@ function NotaPage({ notaId, orders, onBack }) {
         </div>
 
         {canEdit && (
-          <button className="btn btn-ghost btn-full no-print" style={{ marginBottom: 12, gap: 6 }} onClick={() => { setShowEdit(true); setSaved(false); }}>
-            <Edit3 size={16} /> Edit Nota
-          </button>
+          <>
+            {!showDeleteConfirm ? (
+              <button
+                className="btn btn-danger btn-full no-print"
+                style={{ marginBottom: 12, gap: 6 }}
+                onClick={() => setShowDeleteConfirm(true)}
+              >
+                <Trash2 size={16} /> Hapus Nota Ini
+              </button>
+            ) : (
+              <div style={{
+                background: C.dangerBg, border: `2px solid ${C.danger}`,
+                borderRadius: 12, padding: "14px 16px", marginBottom: 12
+              }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: C.danger, marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+                  <AlertCircle size={16} /> Hapus nota ini secara permanen?
+                </div>
+                <div style={{ fontSize: 12, color: C.muted, marginBottom: 12 }}>
+                  Data transaksi <strong>{notaId}</strong> akan terhapus dan tidak bisa dikembalikan.
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    style={{ flex: 1 }}
+                    onClick={() => setShowDeleteConfirm(false)}
+                  >
+                    Batal
+                  </button>
+                  <button
+                    className="btn btn-danger"
+                    style={{ flex: 1, gap: 4 }}
+                    onClick={handleHapus}
+                    disabled={deleting}
+                  >
+                    {deleting ? <><Loader2 size={14} className="spinning" /> Menghapus...</> : <><Trash2 size={14} /> Ya, Hapus</>}
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
         )}
 
         <div style={{ textAlign: "center", marginTop: 24, paddingTop: 16, borderTop: `1px dashed ${C.border}` }}>
@@ -1509,14 +1780,361 @@ function NotaPage({ notaId, orders, onBack }) {
   );
 }
 
-// ─── RIWAYAT PAGE ─────────────────────────────────────────────────────────────
+// ─── EXPORT MODAL ─────────────────────────────────────────────────────────────
+function ExportModal({ orders, onClose }) {
+  const BULAN_LABEL = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Ags", "Sep", "Okt", "Nov", "Des"];
+  const now = new Date();
+  const [exportMode, setExportMode] = useState("preset"); // "preset" | "custom" | "month"
+  const [preset, setPreset] = useState("today");
+  const [customFrom, setCustomFrom] = useState(now.toISOString().split("T")[0]);
+  const [customTo, setCustomTo] = useState(now.toISOString().split("T")[0]);
+  const [exportBulan, setExportBulan] = useState(now.getMonth());
+  const [exportTahun, setExportTahun] = useState(now.getFullYear());
+  const [exporting, setExporting] = useState(false);
+
+  const parseOrderDate = (o) => {
+    if (o.timestamp?.toDate) return o.timestamp.toDate();
+    if (o.tanggal) return new Date(o.tanggal);
+    return new Date(0);
+  };
+
+  const getDateRange = () => {
+    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+    const todayEnd = new Date(); todayEnd.setHours(23, 59, 59, 999);
+
+    if (exportMode === "preset") {
+      if (preset === "today") return { from: todayStart, to: todayEnd, label: `Hari_Ini_${todayStart.getDate()}${BULAN_LABEL[todayStart.getMonth()]}${todayStart.getFullYear()}` };
+      if (preset === "yesterday") {
+        const y = new Date(todayStart); y.setDate(y.getDate() - 1);
+        const ye = new Date(y); ye.setHours(23, 59, 59, 999);
+        return { from: y, to: ye, label: `Kemarin_${y.getDate()}${BULAN_LABEL[y.getMonth()]}${y.getFullYear()}` };
+      }
+      if (preset === "week") {
+        const w = new Date(todayStart); w.setDate(w.getDate() - 6);
+        return { from: w, to: todayEnd, label: `7Hari_${w.getDate()}${BULAN_LABEL[w.getMonth()]}-${todayStart.getDate()}${BULAN_LABEL[todayStart.getMonth()]}${todayStart.getFullYear()}` };
+      }
+      if (preset === "month") {
+        const m = new Date(todayStart.getFullYear(), todayStart.getMonth(), 1);
+        return { from: m, to: todayEnd, label: `BulanIni_${BULAN_LABEL[todayStart.getMonth()]}${todayStart.getFullYear()}` };
+      }
+    }
+    if (exportMode === "custom") {
+      const from = new Date(customFrom); from.setHours(0, 0, 0, 0);
+      const to = new Date(customTo); to.setHours(23, 59, 59, 999);
+      const fLabel = `${String(from.getDate()).padStart(2, "0")}${BULAN_LABEL[from.getMonth()]}`;
+      const tLabel = `${String(to.getDate()).padStart(2, "0")}${BULAN_LABEL[to.getMonth()]}${to.getFullYear()}`;
+      return { from, to, label: `${fLabel}-${tLabel}` };
+    }
+    if (exportMode === "month") {
+      const from = new Date(exportTahun, exportBulan, 1);
+      const to = new Date(exportTahun, exportBulan + 1, 0, 23, 59, 59, 999);
+      return { from, to, label: `${BULAN_LABEL[exportBulan]}_${exportTahun}` };
+    }
+  };
+
+  const getFilteredOrders = () => {
+    const range = getDateRange();
+    if (!range) return [];
+    return orders.filter((o) => {
+      const d = parseOrderDate(o);
+      return d >= range.from && d <= range.to;
+    }).sort((a, b) => parseOrderDate(a) - parseOrderDate(b));
+  };
+
+  const preview = getFilteredOrders();
+  const previewRevenue = preview.filter(o => o.statusBayar === "Lunas").reduce((s, o) => s + o.total, 0);
+  const previewPiutang = preview.filter(o => o.statusBayar !== "Lunas").reduce((s, o) => s + o.total, 0);
+
+  const PRESETS = [
+    { id: "today", label: "Hari Ini" },
+    { id: "yesterday", label: "Kemarin" },
+    { id: "week", label: "7 Hari Terakhir" },
+    { id: "month", label: "Bulan Ini" },
+  ];
+
+  const handleExport = async () => {
+    const range = getDateRange();
+    const data = getFilteredOrders();
+    if (data.length === 0) return;
+    setExporting(true);
+    try {
+      const XLSX = await import("xlsx");
+      const wb = XLSX.utils.book_new();
+
+      // Sheet 1: Transaksi
+      const sheet1 = data.map((o) => ({
+        "Tanggal": o.tanggal || "",
+        "Nota ID": o.notaId || o.id,
+        "Customer": o.customerNama,
+        "No. HP": o.customerHp,
+        "Item": (o.items || []).map((it) =>
+          it.satuan === "meter"
+            ? `${it.nama} (${(parseFloat(it.luas) || 0).toFixed(1)}m²)`
+            : `${it.nama} (${it.qty}x)`
+        ).join(" | "),
+        "Subtotal": o.subtotal || o.total,
+        "Diskon (Rp)": o.diskon?.amount || 0,
+        "Total": o.total,
+        "Metode": o.metode,
+        "Status Bayar": o.statusBayar,
+        "Catatan": o.catatan || "",
+      }));
+      const ws1 = XLSX.utils.json_to_sheet(sheet1);
+      ws1["!cols"] = [
+        { wch: 14 }, { wch: 16 }, { wch: 22 }, { wch: 16 },
+        { wch: 40 }, { wch: 14 }, { wch: 12 }, { wch: 14 },
+        { wch: 12 }, { wch: 14 }, { wch: 24 },
+      ];
+      XLSX.utils.book_append_sheet(wb, ws1, "Transaksi");
+
+      // Sheet 2: Rekap per Hari
+      const byDay = {};
+      data.forEach((o) => {
+        const d = parseOrderDate(o);
+        const key = `${String(d.getDate()).padStart(2, "0")} ${BULAN_LABEL[d.getMonth()]} ${d.getFullYear()}`;
+        if (!byDay[key]) byDay[key] = { tanggal: key, jumlah: 0, lunas: 0, belum: 0, total: 0 };
+        byDay[key].jumlah++;
+        byDay[key].total += o.total;
+        if (o.statusBayar === "Lunas") byDay[key].lunas += o.total;
+        else byDay[key].belum += o.total;
+      });
+      const sheet2 = Object.values(byDay).map((r) => ({
+        "Tanggal": r.tanggal,
+        "Jumlah Transaksi": r.jumlah,
+        "Omzet": r.total,
+        "Lunas": r.lunas,
+        "Piutang": r.belum,
+      }));
+      // Tambah baris total
+      sheet2.push({
+        "Tanggal": "TOTAL",
+        "Jumlah Transaksi": data.length,
+        "Omzet": previewRevenue + previewPiutang,
+        "Lunas": previewRevenue,
+        "Piutang": previewPiutang,
+      });
+      const ws2 = XLSX.utils.json_to_sheet(sheet2);
+      ws2["!cols"] = [{ wch: 20 }, { wch: 20 }, { wch: 16 }, { wch: 16 }, { wch: 16 }];
+      XLSX.utils.book_append_sheet(wb, ws2, "Rekap Harian");
+
+      XLSX.writeFile(wb, `Carpetology_${range.label}.xlsx`);
+      onClose();
+    } catch (e) {
+      alert("Gagal export: " + e.message);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(26,46,53,0.6)", display: "flex", alignItems: "flex-end" }}>
+      <div style={{ background: C.white, width: "100%", borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: "88vh", display: "flex", flexDirection: "column", animation: "slideUp .25s ease-out" }}>
+
+        {/* Header */}
+        <div style={{ padding: "16px 20px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
+          <div>
+            <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 16, fontWeight: 700, color: C.dark, display: "flex", alignItems: "center", gap: 8 }}>
+              <Download size={18} color={C.primary} /> Export Excel
+            </div>
+            <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>Pilih rentang tanggal yang ingin diexport</div>
+          </div>
+          <button onClick={onClose} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, width: 32, height: 32, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: C.muted }}>
+            <X size={16} />
+          </button>
+        </div>
+
+        <div style={{ overflowY: "auto", flex: 1, padding: "16px 20px" }}>
+
+          {/* Mode selector */}
+          <div className="section-header">Tipe Rentang</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 20 }}>
+            {[
+              { id: "preset", label: "Preset Cepat" },
+              { id: "custom", label: "Pilih Tanggal" },
+              { id: "month", label: "Per Bulan" },
+            ].map((m) => (
+              <div
+                key={m.id}
+                onClick={() => setExportMode(m.id)}
+                style={{
+                  padding: "10px 8px", borderRadius: 10, cursor: "pointer", textAlign: "center",
+                  border: `2px solid ${exportMode === m.id ? C.primary : C.border}`,
+                  background: exportMode === m.id ? C.primary100 : C.white,
+                  fontSize: 12, fontWeight: 700,
+                  color: exportMode === m.id ? C.primary700 : C.muted,
+                  transition: "all .15s",
+                }}
+              >
+                {m.label}
+              </div>
+            ))}
+          </div>
+
+          {/* Preset options */}
+          {exportMode === "preset" && (
+            <>
+              <div className="section-header">Pilih Periode</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 20 }}>
+                {PRESETS.map((p) => (
+                  <div
+                    key={p.id}
+                    onClick={() => setPreset(p.id)}
+                    style={{
+                      padding: "12px 14px", borderRadius: 12, cursor: "pointer",
+                      border: `2px solid ${preset === p.id ? C.primary : C.border}`,
+                      background: preset === p.id ? C.primary100 : C.white,
+                      fontSize: 13, fontWeight: 700,
+                      color: preset === p.id ? C.primary700 : C.dark,
+                      transition: "all .15s", textAlign: "center",
+                    }}
+                  >
+                    {p.label}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* Custom date range */}
+          {exportMode === "custom" && (
+            <>
+              <div className="section-header">Rentang Tanggal</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 20 }}>
+                <div>
+                  <div style={{ fontSize: 11, color: C.muted, fontWeight: 600, marginBottom: 6, textTransform: "uppercase" }}>Dari Tanggal</div>
+                  <input
+                    type="date"
+                    value={customFrom}
+                    max={customTo}
+                    onChange={(e) => setCustomFrom(e.target.value)}
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: `1.5px solid ${C.border}`, fontSize: 13, fontFamily: "inherit", color: C.dark, outline: "none", boxSizing: "border-box" }}
+                  />
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: C.muted, fontWeight: 600, marginBottom: 6, textTransform: "uppercase" }}>Sampai Tanggal</div>
+                  <input
+                    type="date"
+                    value={customTo}
+                    min={customFrom}
+                    max={now.toISOString().split("T")[0]}
+                    onChange={(e) => setCustomTo(e.target.value)}
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: `1.5px solid ${C.border}`, fontSize: 13, fontFamily: "inherit", color: C.dark, outline: "none", boxSizing: "border-box" }}
+                  />
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Month picker */}
+          {exportMode === "month" && (
+            <>
+              <div className="section-header">Pilih Bulan</div>
+              <div style={{ display: "flex", gap: 10, marginBottom: 12, alignItems: "center" }}>
+                <select
+                  value={exportBulan}
+                  onChange={(e) => setExportBulan(Number(e.target.value))}
+                  style={{ flex: 1, padding: "10px 12px", borderRadius: 10, border: `1.5px solid ${C.border}`, fontSize: 13, fontFamily: "inherit", background: C.white, color: C.dark, outline: "none" }}
+                >
+                  {BULAN_LABEL.map((b, i) => <option key={i} value={i}>{b}</option>)}
+                </select>
+                <select
+                  value={exportTahun}
+                  onChange={(e) => setExportTahun(Number(e.target.value))}
+                  style={{ width: 100, padding: "10px 12px", borderRadius: 10, border: `1.5px solid ${C.border}`, fontSize: 13, fontFamily: "inherit", background: C.white, color: C.dark, outline: "none" }}
+                >
+                  {[2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+              </div>
+              {/* Quick month chips */}
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 20 }}>
+                {BULAN_LABEL.map((b, i) => (
+                  <div
+                    key={i}
+                    className={`tab-chip ${exportBulan === i ? "active" : ""}`}
+                    style={{ padding: "4px 10px", fontSize: 11 }}
+                    onClick={() => setExportBulan(i)}
+                  >
+                    {b}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* Preview stats */}
+          <div className="section-header">Preview Data</div>
+          <div style={{
+            background: preview.length > 0 ? C.primary50 : C.surface,
+            border: `1.5px solid ${preview.length > 0 ? C.primary200 : C.border}`,
+            borderRadius: 12, padding: "14px 16px", marginBottom: 8
+          }}>
+            {preview.length === 0 ? (
+              <div style={{ textAlign: "center", color: C.muted, fontSize: 13, padding: "8px 0" }}>
+                Tidak ada transaksi di periode ini
+              </div>
+            ) : (
+              <>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 10 }}>
+                  <div style={{ textAlign: "center" }}>
+                    <div style={{ fontSize: 11, color: C.muted, marginBottom: 2 }}>Transaksi</div>
+                    <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 20, fontWeight: 800, color: C.dark }}>{preview.length}</div>
+                  </div>
+                  <div style={{ textAlign: "center" }}>
+                    <div style={{ fontSize: 11, color: "#15803D", marginBottom: 2 }}>Lunas</div>
+                    <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 13, fontWeight: 700, color: "#15803D" }}>{rupiah(previewRevenue)}</div>
+                  </div>
+                  <div style={{ textAlign: "center" }}>
+                    <div style={{ fontSize: 11, color: "#D97706", marginBottom: 2 }}>Piutang</div>
+                    <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 13, fontWeight: 700, color: "#D97706" }}>{rupiah(previewPiutang)}</div>
+                  </div>
+                </div>
+                <div style={{ background: C.primary100, borderRadius: 8, padding: "8px 12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: C.primary700 }}>Total Omzet</span>
+                  <span style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 15, fontWeight: 800, color: C.primary700 }}>{rupiah(previewRevenue + previewPiutang)}</span>
+                </div>
+                <div style={{ fontSize: 11, color: C.muted, marginTop: 10, display: "flex", alignItems: "center", gap: 4 }}>
+                  <FileText size={11} /> File berisi 2 sheet: <strong>Transaksi</strong> (detail) + <strong>Rekap Harian</strong>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding: "12px 20px 20px", borderTop: `1px solid ${C.border}`, flexShrink: 0 }}>
+          <button
+            className="btn btn-primary btn-full"
+            onClick={handleExport}
+            disabled={preview.length === 0 || exporting}
+            style={{ gap: 6 }}
+          >
+            {exporting
+              ? <><Loader2 size={16} className="spinning" /> Mengexport...</>
+              : <><Download size={16} /> Export {preview.length} Transaksi ke Excel</>
+            }
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── RIWAYAT PAGE (UPDATED) ───────────────────────────────────────────────────
 function RiwayatPage({ orders, loadingOrders, onViewNota }) {
   const [search, setSearch] = useState("");
   const [filterMetode, setFilterMetode] = useState("Semua");
+  const [viewMode, setViewMode] = useState("date");
+  const [showExport, setShowExport] = useState(false);
+
   const BULAN_LABEL = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Ags", "Sep", "Okt", "Nov", "Des"];
+  const HARI_LABEL = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
   const now = new Date();
-  const [filterBulan, setFilterBulan] = useState(now.getMonth());
-  const [filterTahun, setFilterTahun] = useState(now.getFullYear());
+
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  });
 
   const metodeOptions = ["Semua", "Tunai", "QRIS", "Transfer", "Belum Payment"];
 
@@ -1526,68 +2144,113 @@ function RiwayatPage({ orders, loadingOrders, onViewNota }) {
     return new Date(0);
   };
 
-  const filtered = orders
-    .filter((o) => { const d = parseOrderDate(o); return d.getMonth() === filterBulan && d.getFullYear() === filterTahun; })
+  const isSameDay = (d1, d2) =>
+    d1.getDate() === d2.getDate() &&
+    d1.getMonth() === d2.getMonth() &&
+    d1.getFullYear() === d2.getFullYear();
+
+  const formatDateLabel = (date) => {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+    if (isSameDay(date, today)) return "Hari Ini";
+    if (isSameDay(date, yesterday)) return "Kemarin";
+    return `${HARI_LABEL[date.getDay()]}, ${date.getDate()} ${BULAN_LABEL[date.getMonth()]} ${date.getFullYear()}`;
+  };
+
+  const formatDateShort = (date) =>
+    `${String(date.getDate()).padStart(2, "0")}/${String(date.getMonth() + 1).padStart(2, "0")}/${date.getFullYear()}`;
+
+  const goDay = (delta) => {
+    const d = new Date(selectedDate);
+    d.setDate(d.getDate() + delta);
+    setSelectedDate(d);
+  };
+
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+  const isToday = isSameDay(selectedDate, today);
+
+  const filteredByDate = orders
+    .filter((o) => isSameDay(parseOrderDate(o), selectedDate))
     .filter((o) => { const s = search.toLowerCase(); return (o.customerNama || "").toLowerCase().includes(s) || (o.customerHp || "").includes(s) || (o.id || "").toLowerCase().includes(s); })
     .filter((o) => filterMetode === "Semua" || o.metode === filterMetode)
     .sort((a, b) => parseOrderDate(b) - parseOrderDate(a));
 
-  const totalRevenue = filtered.filter(o => o.statusBayar === "Lunas").reduce((s, o) => s + o.total, 0);
-  const totalPiutang = filtered.filter(o => o.statusBayar !== "Lunas").reduce((s, o) => s + o.total, 0);
-
-  const exportExcel = async () => {
-    const XLSX = await import("xlsx");
-    const wb = XLSX.utils.book_new();
-    const sheet1 = filtered.map((o) => ({
-      "Tanggal": o.tanggal || "", "Customer": o.customerNama, "No. HP": o.customerHp,
-      "Item (ringkasan)": (o.items || []).map((it) => it.satuan === "meter" ? `${it.nama} (${(parseFloat(it.luas) || 0).toFixed(1)}m²)` : `${it.nama} (${it.qty}x)`).join(" | "),
-      "Subtotal": o.subtotal || o.total, "Diskon (Rp)": o.diskon?.amount || 0, "Total": o.total,
-      "Metode": o.metode, "Status": o.statusBayar, "Catatan": o.catatan || "",
-    }));
-    const ws1 = XLSX.utils.json_to_sheet(sheet1);
-    ws1["!cols"] = [{ wch: 14 }, { wch: 22 }, { wch: 16 }, { wch: 40 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 24 }];
-    XLSX.utils.book_append_sheet(wb, ws1, "Transaksi");
-    XLSX.writeFile(wb, `Carpetology_${BULAN_LABEL[filterBulan]}_${filterTahun}.xlsx`);
+  const buildGrouped = () => {
+    const base = orders
+      .filter((o) => { const s = search.toLowerCase(); return (o.customerNama || "").toLowerCase().includes(s) || (o.customerHp || "").includes(s); })
+      .filter((o) => filterMetode === "Semua" || o.metode === filterMetode);
+    const groups = {};
+    base.forEach((o) => {
+      const d = parseOrderDate(o);
+      d.setHours(0, 0, 0, 0);
+      const key = d.getTime();
+      if (!groups[key]) groups[key] = { date: new Date(d), items: [] };
+      groups[key].items.push(o);
+    });
+    return Object.values(groups).sort((a, b) => b.date - a.date);
   };
+
+  const totalRevenue = filteredByDate.filter(o => o.statusBayar === "Lunas").reduce((s, o) => s + o.total, 0);
+  const totalPiutang = filteredByDate.filter(o => o.statusBayar !== "Lunas").reduce((s, o) => s + o.total, 0);
+  const grouped = viewMode === "grouped" ? buildGrouped() : null;
 
   return (
     <div className="animate-in" style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      {showExport && <ExportModal orders={orders} onClose={() => setShowExport(false)} />}
+
       <div className="step-content" style={{ flex: 1 }}>
-        <div style={{ display: "flex", gap: 8, marginBottom: 16, alignItems: "center" }}>
-          <select value={filterBulan} onChange={(e) => setFilterBulan(Number(e.target.value))}
-            style={{ flex: 1, padding: "9px 12px", borderRadius: 10, border: `1.5px solid ${C.border}`, fontSize: 13, fontFamily: "inherit", background: C.white, color: C.dark, outline: "none" }}>
-            {BULAN_LABEL.map((b, i) => <option key={i} value={i}>{b}</option>)}
-          </select>
-          <select value={filterTahun} onChange={(e) => setFilterTahun(Number(e.target.value))}
-            style={{ width: 90, padding: "9px 12px", borderRadius: 10, border: `1.5px solid ${C.border}`, fontSize: 13, fontFamily: "inherit", background: C.white, color: C.dark, outline: "none" }}>
-            {[2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
-          </select>
-          <button className="btn btn-ghost btn-sm" onClick={exportExcel} disabled={filtered.length === 0} style={{ whiteSpace: "nowrap", flexShrink: 0, gap: 4 }}>
+        {/* Top row: view toggle + export */}
+        <div style={{ display: "flex", gap: 8, marginBottom: 14, alignItems: "center" }}>
+          <button onClick={() => setViewMode("date")} className={`btn btn-sm ${viewMode === "date" ? "btn-primary" : "btn-secondary"}`} style={{ flex: 1 }}>
+            Per Tanggal
+          </button>
+          <button onClick={() => setViewMode("grouped")} className={`btn btn-sm ${viewMode === "grouped" ? "btn-primary" : "btn-secondary"}`} style={{ flex: 1 }}>
+            Grup Hari
+          </button>
+          <button onClick={() => setShowExport(true)} className="btn btn-ghost btn-sm" style={{ gap: 4, flexShrink: 0 }}>
             <Download size={14} /> Excel
           </button>
         </div>
 
-        <div className="mini-stats">
-          <div className="mini-stat">
-            <div className="mini-stat-label">Transaksi {BULAN_LABEL[filterBulan]}</div>
-            <div className="mini-stat-value">{filtered.length}</div>
-          </div>
-          <div className="mini-stat">
-            <div className="mini-stat-label">Omzet {BULAN_LABEL[filterBulan]}</div>
-            <div className="mini-stat-value" style={{ fontSize: 13 }}>{rupiah(totalRevenue + totalPiutang)}</div>
-          </div>
-          <div className="mini-stat">
-            <div className="mini-stat-label" style={{ color: "#15803D", display: "flex", alignItems: "center", gap: 4 }}><CheckCircle size={11} /> Lunas</div>
-            <div className="mini-stat-value" style={{ color: "#15803D", fontSize: 13 }}>{rupiah(totalRevenue)}</div>
-          </div>
-          <div className="mini-stat">
-            <div className="mini-stat-label" style={{ color: "#D97706", display: "flex", alignItems: "center", gap: 4 }}><Clock size={11} /> Piutang</div>
-            <div className="mini-stat-value" style={{ color: "#D97706", fontSize: 13 }}>{rupiah(totalPiutang)}</div>
-          </div>
-        </div>
+        {viewMode === "date" && (
+          <>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, background: C.surface, borderRadius: 12, padding: "8px 12px", border: `1.5px solid ${C.border}` }}>
+              <button onClick={() => goDay(-1)} style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 8, width: 32, height: 32, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: C.dark, flexShrink: 0 }}>
+                <ArrowLeft size={14} />
+              </button>
+              <div style={{ flex: 1, textAlign: "center" }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>{formatDateLabel(selectedDate)}</div>
+                <div style={{ fontSize: 11, color: C.muted }}>{formatDateShort(selectedDate)}</div>
+              </div>
+              <button onClick={() => goDay(1)} disabled={isToday} style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 8, width: 32, height: 32, cursor: isToday ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: isToday ? C.border : C.dark, flexShrink: 0, opacity: isToday ? 0.4 : 1 }}>
+                <ChevronRight size={14} />
+              </button>
+            </div>
+
+            <div style={{ display: "flex", gap: 8, marginBottom: 14, alignItems: "center" }}>
+              {[{ label: "Kemarin", date: yesterday }, { label: "Hari Ini", date: today }].map(({ label, date }) => (
+                <div key={label} className={`tab-chip ${isSameDay(selectedDate, date) ? "active" : ""}`} onClick={() => setSelectedDate(new Date(date))}>{label}</div>
+              ))}
+              <input
+                type="date"
+                max={today.toISOString().split("T")[0]}
+                value={selectedDate.toISOString().split("T")[0]}
+                onChange={(e) => { const d = new Date(e.target.value); d.setHours(0, 0, 0, 0); setSelectedDate(d); }}
+                style={{ marginLeft: "auto", padding: "5px 10px", borderRadius: 20, border: `1.5px solid ${C.border}`, fontSize: 12, fontFamily: "inherit", color: C.dark, background: C.white, outline: "none", cursor: "pointer" }}
+              />
+            </div>
+
+            <div className="mini-stats" style={{ marginBottom: 14 }}>
+              <div className="mini-stat"><div className="mini-stat-label">Transaksi</div><div className="mini-stat-value">{filteredByDate.length}</div></div>
+              <div className="mini-stat"><div className="mini-stat-label">Omzet</div><div className="mini-stat-value" style={{ fontSize: 13 }}>{rupiah(totalRevenue + totalPiutang)}</div></div>
+              <div className="mini-stat"><div className="mini-stat-label" style={{ color: "#15803D", display: "flex", alignItems: "center", gap: 4 }}><CheckCircle size={11} /> Lunas</div><div className="mini-stat-value" style={{ color: "#15803D", fontSize: 13 }}>{rupiah(totalRevenue)}</div></div>
+              <div className="mini-stat"><div className="mini-stat-label" style={{ color: "#D97706", display: "flex", alignItems: "center", gap: 4 }}><Clock size={11} /> Piutang</div><div className="mini-stat-value" style={{ color: "#D97706", fontSize: 13 }}>{rupiah(totalPiutang)}</div></div>
+            </div>
+          </>
+        )}
 
         <SearchInput value={search} onChange={setSearch} placeholder="Cari nama, HP, atau ID..." />
-
         <div className="tab-chips">
           {metodeOptions.map((m) => (
             <div key={m} className={`tab-chip ${filterMetode === m ? "active" : ""}`} onClick={() => setFilterMetode(m)}>{m}</div>
@@ -1595,57 +2258,79 @@ function RiwayatPage({ orders, loadingOrders, onViewNota }) {
         </div>
 
         {loadingOrders ? (
-          <div className="loading-screen">
-            <Loader2 size={24} className="spinning" color={C.primary} />
-            Memuat riwayat transaksi...
-          </div>
-        ) : (
+          <div className="loading-screen"><Loader2 size={24} className="spinning" color={C.primary} />Memuat riwayat transaksi...</div>
+        ) : viewMode === "date" ? (
           <>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-              <div className="section-header" style={{ margin: 0 }}>
-                {filtered.length} transaksi · {BULAN_LABEL[filterBulan]} {filterTahun}
-              </div>
-            </div>
-            {filtered.map((order) => (
-              <div key={order.id} className="history-card" onClick={() => onViewNota(order.notaId || order.id)}>
-                <div className="history-top">
-                  <div>
-                    <div className="history-cust">{order.customerNama}</div>
-                    <div className="history-date">{order.id} • {fmtDate(order.tanggal || order.timestamp)}</div>
-                  </div>
-                  <div className={`badge ${order.statusBayar === "Lunas" ? "badge-success" : "badge-warning"}`} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                    {order.statusBayar === "Lunas" ? <><CheckCircle size={10} /> Lunas</> : <><Clock size={10} /> Belum</>}
-                  </div>
-                </div>
-                <div className="history-items">
-                  {(order.items || []).map((i, idx) => (
-                    <span key={idx}>{idx > 0 && ", "}{i.qty}× {i.nama}</span>
-                  ))}
-                  {order.catatan && (
-                    <div style={{ fontSize: 11, color: "#D97706", marginTop: 4, fontStyle: "italic", display: "flex", alignItems: "center", gap: 4 }}>
-                      <FileText size={11} /> {order.catatan}
-                    </div>
-                  )}
-                </div>
-                <div className="history-bottom">
-                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                    <span className="badge badge-gray" style={{ fontSize: 10 }}>{order.metode}</span>
-                    {order.diskon?.amount > 0 && (
-                      <span className="badge badge-warning" style={{ fontSize: 10 }}>-{rupiah(order.diskon.amount)}</span>
-                    )}
-                  </div>
-                  <div className="history-total">{rupiah(order.total)}</div>
-                </div>
-              </div>
-            ))}
-            {filtered.length === 0 && (
+            <div className="section-header">{filteredByDate.length} transaksi · {formatDateLabel(selectedDate)}</div>
+            {filteredByDate.map((order) => <HistoryCard key={order.id} order={order} onViewNota={onViewNota} fmtDate={fmtDate} />)}
+            {filteredByDate.length === 0 && (
               <div className="empty-state">
                 <div className="empty-icon"><ClipboardList size={40} color={C.border} /></div>
-                <div className="empty-text">Belum ada transaksi di {BULAN_LABEL[filterBulan]} {filterTahun}</div>
+                <div className="empty-text">Tidak ada transaksi pada {formatDateLabel(selectedDate)}</div>
               </div>
             )}
           </>
+        ) : (
+          <>
+            {grouped.length === 0 ? (
+              <div className="empty-state"><div className="empty-icon"><ClipboardList size={40} color={C.border} /></div><div className="empty-text">Belum ada transaksi</div></div>
+            ) : grouped.map((group) => {
+              const dayRevenue = group.items.filter(o => o.statusBayar === "Lunas").reduce((s, o) => s + o.total, 0);
+              const dayPiutang = group.items.filter(o => o.statusBayar !== "Lunas").reduce((s, o) => s + o.total, 0);
+              return (
+                <div key={group.date.getTime()} style={{ marginBottom: 20 }}>
+                  <div style={{ background: C.dark, borderRadius: 10, padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: C.primary }}>{formatDateLabel(group.date)}</div>
+                      <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>{formatDateShort(group.date)} · {group.items.length} transaksi</div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: C.white, fontFamily: "'Space Grotesk',sans-serif" }}>{rupiah(dayRevenue + dayPiutang)}</div>
+                      {dayPiutang > 0 && <div style={{ fontSize: 10, color: "#F59E0B", marginTop: 1 }}>piutang {rupiah(dayPiutang)}</div>}
+                    </div>
+                  </div>
+                  {group.items.map((order) => <HistoryCard key={order.id} order={order} onViewNota={onViewNota} fmtDate={fmtDate} />)}
+                </div>
+              );
+            })}
+          </>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ─── HISTORY CARD (extracted) ─────────────────────────────────────────────────
+function HistoryCard({ order, onViewNota, fmtDate }) {
+  return (
+    <div className="history-card" onClick={() => onViewNota(order.notaId || order.id)}>
+      <div className="history-top">
+        <div>
+          <div className="history-cust">{order.customerNama}</div>
+          <div className="history-date">{order.id} · {fmtDate(order.tanggal || order.timestamp)}</div>
+        </div>
+        <div className={`badge ${order.statusBayar === "Lunas" ? "badge-success" : "badge-warning"}`} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          {order.statusBayar === "Lunas" ? <><CheckCircle size={10} /> Lunas</> : <><Clock size={10} /> Belum</>}
+        </div>
+      </div>
+      <div className="history-items">
+        {(order.items || []).map((i, idx) => (
+          <span key={idx}>{idx > 0 && ", "}{i.qty}× {i.nama}</span>
+        ))}
+        {order.catatan && (
+          <div style={{ fontSize: 11, color: "#D97706", marginTop: 4, fontStyle: "italic", display: "flex", alignItems: "center", gap: 4 }}>
+            <FileText size={11} /> {order.catatan}
+          </div>
+        )}
+      </div>
+      <div className="history-bottom">
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <span className="badge badge-gray" style={{ fontSize: 10 }}>{order.metode}</span>
+          {order.diskon?.amount > 0 && (
+            <span className="badge badge-warning" style={{ fontSize: 10 }}>-{rupiah(order.diskon.amount)}</span>
+          )}
+        </div>
+        <div className="history-total">{rupiah(order.total)}</div>
       </div>
     </div>
   );
@@ -1721,7 +2406,7 @@ export default function App() {
     return { id: docRef.id, nama, hp };
   };
 
-  const handleSimpan = async ({ diskonType, diskonVal, diskonAmount }) => {
+  const handleSimpan = async ({ diskonType, diskonVal, diskonAmount, isHomeVisit }) => {
     setSavingOrder(true);
     try {
       const subtotal = cart.reduce((s, c) => s + c.subtotal, 0);
@@ -1729,32 +2414,61 @@ export default function App() {
       const notaId = "NOTA-" + genId();
       const metodeLabel = PAY_METHODS.find((m) => m.id === payMethod)?.label || payMethod;
       const statusBayar = payMethod === "belum" ? "Belum Lunas" : "Lunas";
+
+      // ── Home Visit → langsung Selesai & Lunas ──────────────────────────────
+      const statusOrder = isHomeVisit ? "Selesai" : "Waiting List";
+      const layananType = isHomeVisit ? "home_visit" : "laundry";
+      // Jika home visit paksa statusBayar = Lunas karena langsung selesai di tempat
+      const finalStatusBayar = isHomeVisit ? "Lunas" : statusBayar;
+
       const BULAN = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Ags", "Sep", "Okt", "Nov", "Des"];
       const now = new Date();
       const tanggalIndo = `${String(now.getDate()).padStart(2, "0")} ${BULAN[now.getMonth()]} ${now.getFullYear()}`;
+
       const itemsPayload = cart.map((c) => ({
         produkId: c.produkId, nama: c.nama, satuan: c.satuan, qty: c.qty,
-        panjang: null, lebar: null, luas: c.satuan === "meter" ? (parseFloat(c.luas) || 0) : null,
+        panjang: null, lebar: null,
+        luas: c.satuan === "meter" ? (parseFloat(c.luas) || 0) : null,
         harga: c.harga, subtotal: c.subtotal,
       }));
+
       const txRef = await addDoc(collection(db, "transactions"), {
-        customer_id: doc(db, "customers", customer.id), nama: customer.nama, hp: customer.hp,
-        items: itemsPayload, subtotal_harga: subtotal,
+        customer_id: doc(db, "customers", customer.id),
+        nama: customer.nama,
+        hp: customer.hp,
+        items: itemsPayload,
+        subtotal_harga: subtotal,
         diskon: { type: diskonType, nilai: diskonVal, amount: diskonAmount },
-        metode_pembayaran: metodeLabel, status_order: "Waiting List", statusBayar,
-        total_harga: total, created_at: serverTimestamp(), tanggal: tanggalIndo,
-        catatan: catatan || "", notaId,
+        metode_pembayaran: metodeLabel,
+        status_order: statusOrder,       // ← "Selesai" jika home_visit
+        statusBayar: finalStatusBayar,  // ← "Lunas" jika home_visit
+        layanan_type: layananType,       // ← FIELD BARU
+        total_harga: total,
+        created_at: serverTimestamp(),
+        tanggal: tanggalIndo,
+        catatan: catatan || "",
+        notaId,
       });
+
       setCurrentOrder({
-        id: txRef.id, customerId: customer.id, customerNama: customer.nama, customerHp: customer.hp,
+        id: txRef.id, customerId: customer.id,
+        customerNama: customer.nama, customerHp: customer.hp,
         items: itemsPayload, subtotal,
         diskon: { type: diskonType, nilai: diskonVal, amount: diskonAmount },
-        total, metode: metodeLabel, statusBayar, status: "Waiting List",
-        tanggal: tanggalIndo, catatan, notaId, timestamp: new Date(),
+        total, metode: metodeLabel,
+        statusBayar: finalStatusBayar,
+        status: statusOrder,
+        layananType,                           // ← kirim ke StepSukses
+        tanggal: tanggalIndo, catatan, notaId,
+        timestamp: new Date(),
       });
       setKasirStep(3);
-    } catch (e) { console.error("Gagal simpan transaksi:", e); alert("Gagal menyimpan transaksi. Coba lagi."); }
-    finally { setSavingOrder(false); }
+    } catch (e) {
+      console.error("Gagal simpan transaksi:", e);
+      alert("Gagal menyimpan transaksi. Coba lagi.");
+    } finally {
+      setSavingOrder(false);
+    }
   };
 
   const handleReset = () => {

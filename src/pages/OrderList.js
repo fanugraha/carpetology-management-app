@@ -117,7 +117,9 @@ function OrderList({ searchQuery, setSearchQuery, activeFilter, setActiveFilter,
         return hariKerja;
     };
 
-    const visibleTransactions = transactions.filter(o => !o.is_hidden && !isAutoHidden(o));
+    const visibleTransactions = transactions.filter(
+        o => !o.is_hidden && !isAutoHidden(o) && o.layanan_type !== "home_visit"
+    );
 
     const getCount = (status) =>
         status === 'Semua'
@@ -143,7 +145,7 @@ function OrderList({ searchQuery, setSearchQuery, activeFilter, setActiveFilter,
         return tB - tA;
     });
 
-    const filtered = applyFilter(transactions);
+    const filtered = applyFilter(visibleTransactions);
     const orderAktif = sortList(filtered.filter(o => o.status !== 'Ready Anter'));
     const orderReady = sortList(filtered.filter(o => o.status === 'Ready Anter'));
     const totalAktif = visibleTransactions.filter(o => o.status !== 'Ready Anter').length;

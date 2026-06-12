@@ -39,9 +39,10 @@ function TrackingPage() {
                     items: d.items || [],
                     notaId: d.notaId || doc.id,
                     is_hidden: d.is_hidden || false,
+                    layanan_type: d.layanan_type || 'laundry',
                     isAutoHidden,
                 };
-            }).filter(o => !o.is_hidden && !o.isAutoHidden);
+            }).filter(o => !o.is_hidden && !o.isAutoHidden && o.layanan_type !== "home_visit");
 
             setOrders(data);
             setIsLoading(false);
