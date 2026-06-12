@@ -1,7 +1,11 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
-import { collection, addDoc, onSnapshot } from 'firebase/firestore'; // Tambahkan onSnapshot
+import { collection, addDoc, onSnapshot } from 'firebase/firestore';
 import './Adminbookingform.css';
+import {
+    ArrowLeft, User, Phone, MapPin, Sunrise, Sun,
+    Check, Save, Loader2, CheckCircle,
+} from 'lucide-react';
 
 // ── Floating-label input ──────────────────────────────────────────────────
 function FloatInput({ label, icon, type = 'text', value, onChange, ...rest }) {
@@ -48,7 +52,9 @@ function Step({ num, label, active, done }) {
     const cls = active ? 'abf-step abf-step--active' : done ? 'abf-step abf-step--done' : 'abf-step';
     return (
         <div className={cls}>
-            <div className="abf-step__bubble">{done ? '✓' : num}</div>
+            <div className="abf-step__bubble">
+                {done ? <Check size={13} strokeWidth={3} /> : num}
+            </div>
             <span className="abf-step__label">{label}</span>
         </div>
     );
@@ -62,9 +68,8 @@ const AdminBookingForm = () => {
     });
     const [loading, setLoading] = useState(false);
     const [saved, setSaved] = useState(false);
-    const [existingBookings, setExistingBookings] = useState([]); // State untuk data booking
+    const [existingBookings, setExistingBookings] = useState([]);
 
-    // Fetch data booking dari Firebase untuk validasi
     useEffect(() => {
         const q = collection(db, 'bookings');
         const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -76,14 +81,8 @@ const AdminBookingForm = () => {
 
     const set = (key, val) => setFormData(p => ({ ...p, [key]: val }));
 
-    const isSesi1Disabled = () => {
-        // if (!formData.tanggal) return false;
-        // const day = new Date(formData.tanggal).getDay();
-        // return [2, 4, 6].includes(day);
-        return false;
-    };
+    const isSesi1Disabled = () => false;
 
-    // Fungsi cek apakah sesi sudah ada di database
     const isSesiBooked = (tanggal, sesi) => {
         return existingBookings.some(b => b.tanggal === tanggal && b.sesi === sesi);
     };
@@ -124,7 +123,9 @@ const AdminBookingForm = () => {
         return (
             <div className="abf-success">
                 <div className="abf-success__inner">
-                    <div className="abf-success__icon">✓</div>
+                    <div className="abf-success__icon">
+                        <CheckCircle size={40} color="#04CDCD" />
+                    </div>
                     <h2 className="abf-success__title">Booking Tersimpan!</h2>
                     <p className="abf-success__sub">Data berhasil ditambahkan ke sistem</p>
                 </div>
@@ -132,13 +133,28 @@ const AdminBookingForm = () => {
         );
     }
 
+    const SESI_OPTIONS = [
+        {
+            val: 1,
+            label: 'Sesi 1',
+            time: '09:00 – 11:00',
+            icon: <Sunrise size={20} color="#f59e0b" />,
+            disabled: isSesi1Disabled() || isSesiBooked(formData.tanggal, 1),
+        },
+        {
+            val: 2,
+            label: 'Sesi 2',
+            time: '13:00 – 15:00',
+            icon: <Sun size={20} color="#0ea5e9" />,
+            disabled: isSesiBooked(formData.tanggal, 2),
+        },
+    ];
+
     return (
         <div className="abf-root">
             <div className="abf-topbar">
                 <a href="/admin" className="abf-back">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M19 12H5M12 5l-7 7 7 7" />
-                    </svg>
+                    <ArrowLeft size={15} />
                     Kembali
                 </a>
                 <span className="abf-brand">Carpetology</span>
@@ -160,14 +176,30 @@ const AdminBookingForm = () => {
                 {step === 1 && (
                     <div className="abf-panel">
                         <div className="abf-card">
-                            <div className="abf-card__header"><p className="abf-card__header-label">Data Pelanggan</p></div>
+                            <div className="abf-card__header">
+                                <p className="abf-card__header-label">Data Pelanggan</p>
+                            </div>
                             <div className="abf-card__body">
-                                <FloatInput label="Nama Customer" icon="👤" value={formData.nama} onChange={e => set('nama', e.target.value)} required />
-                                <FloatInput label="Nomor WhatsApp" icon="📱" type="tel" value={formData.no_hp} onChange={e => set('no_hp', e.target.value)} />
+                                <FloatInput
+                                    label="Nama Customer"
+                                    icon={<User size={15} color="#94a3b8" />}
+                                    value={formData.nama}
+                                    onChange={e => set('nama', e.target.value)}
+                                    required
+                                />
+                                <FloatInput
+                                    label="Nomor WhatsApp"
+                                    icon={<Phone size={15} color="#94a3b8" />}
+                                    type="tel"
+                                    value={formData.no_hp}
+                                    onChange={e => set('no_hp', e.target.value)}
+                                />
                             </div>
                         </div>
                         <div className="abf-btn-row abf-btn-row--single">
-                            <button className="abf-btn abf-btn--primary" disabled={!step1Valid} onClick={() => step1Valid && setStep(2)}>Lanjut →</button>
+                            <button className="abf-btn abf-btn--primary" disabled={!step1Valid} onClick={() => step1Valid && setStep(2)}>
+                                Lanjut →
+                            </button>
                         </div>
                     </div>
                 )}
@@ -175,26 +207,42 @@ const AdminBookingForm = () => {
                 {step === 2 && (
                     <div className="abf-panel">
                         <div className="abf-card">
-                            <div className="abf-card__header"><p className="abf-card__header-label">Jadwal Kunjungan</p></div>
+                            <div className="abf-card__header">
+                                <p className="abf-card__header-label">Jadwal Kunjungan</p>
+                            </div>
                             <div className="abf-card__body">
                                 <div>
                                     <p className="abf-section-label">Tanggal</p>
-                                    <input type="date" value={formData.tanggal} onChange={e => { set('tanggal', e.target.value); set('sesi', ''); }} className="abf-date" />
+                                    <input
+                                        type="date"
+                                        value={formData.tanggal}
+                                        onChange={e => { set('tanggal', e.target.value); set('sesi', ''); }}
+                                        className="abf-date"
+                                    />
                                 </div>
                                 <div>
                                     <p className="abf-section-label">Pilih Sesi</p>
                                     <div className="abf-sesi-grid">
-                                        {[
-                                            { val: 1, label: 'Sesi 1', time: '09:00 – 11:00', emoji: '🌅', disabled: isSesi1Disabled() || isSesiBooked(formData.tanggal, 1) },
-                                            { val: 2, label: 'Sesi 2', time: '13:00 – 15:00', emoji: '🌤️', disabled: isSesiBooked(formData.tanggal, 2) },
-                                        ].map(s => {
-                                            const cls = ['abf-sesi-card', formData.sesi === s.val ? 'abf-sesi-card--selected' : '', s.disabled ? 'abf-sesi-card--disabled' : ''].filter(Boolean).join(' ');
+                                        {SESI_OPTIONS.map(s => {
+                                            const cls = [
+                                                'abf-sesi-card',
+                                                formData.sesi === s.val ? 'abf-sesi-card--selected' : '',
+                                                s.disabled ? 'abf-sesi-card--disabled' : '',
+                                            ].filter(Boolean).join(' ');
                                             return (
-                                                <div key={s.val} className={cls} onClick={() => s.disabled ? alert("Maaf, sesi ini sudah terisi penuh.") : set('sesi', s.val)}>
-                                                    <span className="abf-sesi-card__emoji">{s.emoji}</span>
+                                                <div
+                                                    key={s.val}
+                                                    className={cls}
+                                                    onClick={() => s.disabled ? alert("Maaf, sesi ini sudah terisi penuh.") : set('sesi', s.val)}
+                                                >
+                                                    <span className="abf-sesi-card__emoji">{s.icon}</span>
                                                     <span className="abf-sesi-card__name">{s.label}</span>
                                                     <span className="abf-sesi-card__time">{s.time}</span>
-                                                    {formData.sesi === s.val && <span className="abf-sesi-card__check">✓</span>}
+                                                    {formData.sesi === s.val && (
+                                                        <span className="abf-sesi-card__check">
+                                                            <Check size={12} strokeWidth={3} />
+                                                        </span>
+                                                    )}
                                                     {s.disabled && <span className="abf-sesi-card__na">N/A</span>}
                                                 </div>
                                             );
@@ -213,9 +261,15 @@ const AdminBookingForm = () => {
                 {step === 3 && (
                     <div className="abf-panel">
                         <div className="abf-card">
-                            <div className="abf-card__header"><p className="abf-card__header-label">Ringkasan Booking</p>
+                            <div className="abf-card__header">
+                                <p className="abf-card__header-label">Ringkasan Booking</p>
                             </div>
-                            {[{ key: 'Pelanggan', val: formData.nama }, { key: 'WhatsApp', val: formData.no_hp }, { key: 'Tanggal', val: formatTanggal(formData.tanggal) }, { key: 'Sesi', val: formData.sesi === 1 ? 'Sesi 1 — 09:00–11:00' : 'Sesi 2 — 13:00–15:00' }].map(r => (
+                            {[
+                                { key: 'Pelanggan', val: formData.nama },
+                                { key: 'WhatsApp', val: formData.no_hp },
+                                { key: 'Tanggal', val: formatTanggal(formData.tanggal) },
+                                { key: 'Sesi', val: formData.sesi === 1 ? 'Sesi 1 — 09:00–11:00' : 'Sesi 2 — 13:00–15:00' },
+                            ].map(r => (
                                 <div key={r.key} className="abf-review-row">
                                     <span className="abf-review-row__key">{r.key}</span>
                                     <span className="abf-review-row__val">{r.val}</span>
@@ -223,15 +277,32 @@ const AdminBookingForm = () => {
                             ))}
                         </div>
                         <div className="abf-card">
-                            <div className="abf-card__header"><p className="abf-card__header-label">Informasi Tambahan</p></div>
+                            <div className="abf-card__header">
+                                <p className="abf-card__header-label">Informasi Tambahan</p>
+                            </div>
                             <div className="abf-card__body">
-                                <FloatInput label="Link Google Maps" icon="📍" type="url" value={formData.maps_lokasi} onChange={e => set('maps_lokasi', e.target.value)} />
-                                <FloatTextarea label="Keterangan (opsional)" value={formData.keterangan} onChange={e => set('keterangan', e.target.value)} />
+                                <FloatInput
+                                    label="Link Google Maps"
+                                    icon={<MapPin size={15} color="#94a3b8" />}
+                                    type="url"
+                                    value={formData.maps_lokasi}
+                                    onChange={e => set('maps_lokasi', e.target.value)}
+                                />
+                                <FloatTextarea
+                                    label="Keterangan (opsional)"
+                                    value={formData.keterangan}
+                                    onChange={e => set('keterangan', e.target.value)}
+                                />
                             </div>
                         </div>
                         <div className="abf-btn-row">
                             <button className="abf-btn abf-btn--secondary" onClick={() => setStep(2)}>← Kembali</button>
-                            <button className="abf-btn abf-btn--primary" disabled={loading} onClick={handleSubmit}>{loading ? <><span className="abf-spinner" />Menyimpan...</> : '💾 Simpan'}</button>
+                            <button className="abf-btn abf-btn--primary" disabled={loading} onClick={handleSubmit}>
+                                {loading
+                                    ? <><Loader2 size={14} className="abf-spinner" /> Menyimpan...</>
+                                    : <><Save size={14} /> Simpan</>
+                                }
+                            </button>
                         </div>
                     </div>
                 )}

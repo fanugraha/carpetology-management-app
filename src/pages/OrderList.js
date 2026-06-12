@@ -5,8 +5,11 @@ import { signOut } from 'firebase/auth';
 import { auth, db } from '../firebase';
 import Navbar from '../componets/Navbar';
 import { useNavigate } from 'react-router-dom';
-import './OrderList.css';
-import { collection, onSnapshot, doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, onSnapshot, doc, getDoc } from 'firebase/firestore';
+import {
+    Search, X, Home, Flame, CheckCircle, Clock, Plus,
+    Layers, AlarmClock, LayoutList, LogOut,
+} from 'lucide-react';
 
 function OrderList({ searchQuery, setSearchQuery, activeFilter, setActiveFilter, onOrderClick }) {
     const { user } = useAuth();
@@ -17,7 +20,6 @@ function OrderList({ searchQuery, setSearchQuery, activeFilter, setActiveFilter,
 
     const customerCache = React.useRef({});
 
-    // Hitung sisa hari sebelum auto-hide (dari ready_at, fallback created_at)
     const getReadyTimestamp = (order) => {
         const ts = order.ready_at || order.created_at;
         if (!ts) return null;
@@ -94,7 +96,6 @@ function OrderList({ searchQuery, setSearchQuery, activeFilter, setActiveFilter,
         return () => unsub();
     }, []);
 
-    // Hitung hari kerja untuk sorting
     const hitungHariKerja = (tglStr) => {
         if (!tglStr || typeof tglStr !== 'string') return 0;
         const bulanIndo = {
@@ -116,12 +117,16 @@ function OrderList({ searchQuery, setSearchQuery, activeFilter, setActiveFilter,
         return hariKerja;
     };
 
+    const visibleTransactions = transactions.filter(o => !o.is_hidden && !isAutoHidden(o));
+
     const getCount = (status) =>
         status === 'Semua'
-            ? transactions.length
-            : transactions.filter(o => o.status === status).length;
+            ? visibleTransactions.length
+            : visibleTransactions.filter(o => o.status === status).length;
 
     const applyFilter = (list) => list.filter(o => {
+        if (o.is_hidden) return false;
+        if (isAutoHidden(o)) return false;
         const q = (searchQuery || '').toLowerCase();
         const nama = (o?.nama || '').toLowerCase();
         const hp = (o?.hp || '').toString();
@@ -140,192 +145,492 @@ function OrderList({ searchQuery, setSearchQuery, activeFilter, setActiveFilter,
 
     const filtered = applyFilter(transactions);
     const orderAktif = sortList(filtered.filter(o => o.status !== 'Ready Anter'));
-    const orderReady = sortList(
-        filtered
-            .filter(o => o.status === 'Ready Anter')
-            .filter(o => !isAutoHidden(o))   // filter auto-hide 7 hari
-            .filter(o => !o.is_hidden)        // filter hide manual admin
-    ); const totalAktif = transactions.filter(o => o.status !== 'Ready Anter').length;
+    const orderReady = sortList(filtered.filter(o => o.status === 'Ready Anter'));
+    const totalAktif = visibleTransactions.filter(o => o.status !== 'Ready Anter').length;
+
+    const isAdmin = user?.role === 'admin' || user?.role === 'Admin';
 
     return (
-        <div style={styles.container}>
-            {/* Header */}
-            <div style={styles.header}>
-                <div>
-                    <h3 style={{ margin: 0, color: '#04CDCD', fontSize: 16 }}>Carpetology Admin</h3>
-                    <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
-                        {totalAktif} order aktif hari ini
+        <div style={S.page}>
+
+            {/* ── Hero Header ── */}
+            <div style={S.hero}>
+                <div style={S.heroInner}>
+                    <div style={S.logoWrap}>
+                        <div style={S.logoIconWrap}>
+                            <Layers size={20} color="#04CDCD" />
+                        </div>
+                        <div>
+                            <div style={S.brand}>Carpetology</div>
+                            <div style={S.tagline}>Admin Dashboard</div>
+                        </div>
+                    </div>
+                    <button
+                        onClick={() => signOut(auth)}
+                        style={S.logoutBtn}
+                    >
+                        <LogOut size={12} />
+                        Logout
+                    </button>
+                </div>
+
+                {/* Stats */}
+                <div style={S.statsRow}>
+                    <div style={S.statChip}>
+                        <span style={S.statNum}>{totalAktif}</span>
+                        <span style={S.statLbl}>Order Aktif</span>
+                    </div>
+                    <div style={S.statDivider} />
+                    <div style={S.statChip}>
+                        <span style={{ ...S.statNum, color: '#86efac' }}>{getCount('Ready Anter')}</span>
+                        <span style={S.statLbl}>Ready Anter</span>
+                    </div>
+                    <div style={S.statDivider} />
+                    <div style={S.statChip}>
+                        <span style={S.statNum}>{visibleTransactions.length}</span>
+                        <span style={S.statLbl}>Total Order</span>
                     </div>
                 </div>
-                <button onClick={() => signOut(auth)} style={styles.logoutBtn}>Logout</button>
             </div>
 
-            {/* Search */}
-            <div style={styles.searchWrapper}>
-                <span>🔍</span>
-                <input
-                    type="text"
-                    placeholder="Cari nama atau nomor HP..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    style={styles.searchInput}
-                />
-                {searchQuery && (
-                    <span onClick={() => setSearchQuery('')} style={{ cursor: 'pointer', color: '#94a3b8' }}>✖</span>
-                )}
-            </div>
+            <div style={S.contentWrap}>
 
-            {/* Filter */}
-            <div style={styles.filterGrid}>
-                {[
-                    { id: 'Semua', label: 'Semua' },
-                    { id: 'Waiting List', label: `⏳ Waiting (${getCount('Waiting List')})` },
-                    { id: 'Sudah Dicuci', label: `🧼 Dicuci (${getCount('Sudah Dicuci')})` },
-                    { id: 'Ready Anter', label: `✅ Ready (${getCount('Ready Anter')})` },
-                ].map((item) => (
-                    <button
-                        key={item.id}
-                        style={{
-                            ...styles.filterBtn,
-                            ...(activeFilter === item.id ? styles.filterActive : styles.filterInactive),
-                        }}
-                        onClick={() => setActiveFilter(item.id)}
-                    >
-                        {item.label}
-                    </button>
-                ))}
-            </div>
-
-            {/* Jadwal Home Visit */}
-            <button
-                className="jadwal-home-visit-btn"
-                onClick={() => navigate('/admin/jadwal-home-visit')}
-            >
-                🏠 Jadwal Home Visit
-            </button>
-
-            {/* Sort */}
-            <div style={styles.sortContainer}>
-                <span style={{ fontSize: '12px', color: '#64748b' }}>Urutkan:</span>
-                <div style={styles.toggleGroup}>
-                    <button onClick={() => setSortBy('urgent')}
-                        style={{ ...styles.toggleBtn, ...(sortBy === 'urgent' ? styles.toggleActive : {}) }}>
-                        🚨 Paling Lama
-                    </button>
-                    <button onClick={() => setSortBy('terbaru')}
-                        style={{ ...styles.toggleBtn, ...(sortBy === 'terbaru' ? styles.toggleActive : {}) }}>
-                        ⏱️ Terbaru
-                    </button>
+                {/* ── Search ── */}
+                <div style={S.searchWrap}>
+                    <span style={S.searchIconWrap}>
+                        <Search size={16} color="#94a3b8" />
+                    </span>
+                    <input
+                        type="text"
+                        placeholder="Cari nama atau nomor HP..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        style={S.searchInput}
+                    />
+                    {searchQuery && (
+                        <button onClick={() => setSearchQuery('')} style={S.searchClear}>
+                            <X size={14} color="#64748b" />
+                        </button>
+                    )}
                 </div>
-            </div>
 
-            {/* Stats */}
-            <div style={styles.statsBar}>
-                <span>📋 Aktif: <strong>{totalAktif}</strong></span>
-                <span style={{ margin: '0 12px', color: '#bfdbfe' }}>|</span>
-                <span>✅ Ready: <strong>{getCount('Ready Anter')}</strong></span>
-                <span style={{ margin: '0 12px', color: '#bfdbfe' }}>|</span>
-                <span>Total: <strong>{transactions.length}</strong></span>
-            </div>
+                {/* ── Filter chips ── */}
+                <div style={S.filterRow}>
+                    {[
+                        { id: 'Semua', label: `Semua (${getCount('Semua')})`, icon: <LayoutList size={11} /> },
+                        { id: 'Waiting List', label: `Waiting (${getCount('Waiting List')})`, icon: <Clock size={11} /> },
+                        { id: 'Sudah Dicuci', label: `Dicuci (${getCount('Sudah Dicuci')})`, icon: <CheckCircle size={11} /> },
+                        { id: 'Ready Anter', label: `Ready (${getCount('Ready Anter')})`, icon: <CheckCircle size={11} /> },
+                    ].map((item) => (
+                        <button
+                            key={item.id}
+                            style={{
+                                ...S.filterChip,
+                                background: activeFilter === item.id ? '#04CDCD' : '#fff',
+                                color: activeFilter === item.id ? '#fff' : '#475569',
+                                borderColor: activeFilter === item.id ? '#04CDCD' : '#e2e8f0',
+                                fontWeight: activeFilter === item.id ? 700 : 600,
+                            }}
+                            onClick={() => setActiveFilter(item.id)}
+                        >
+                            {item.icon} {item.label}
+                        </button>
+                    ))}
+                </div>
 
-            {/* List */}
-            <div style={styles.listContainer}>
+                {/* ── Jadwal Home Visit ── */}
+                <button
+                    onClick={() => navigate('/admin/jadwal-home-visit')}
+                    style={S.homeVisitBtn}
+                >
+                    <Home size={20} color="#fff" />
+                    <div style={{ textAlign: 'left' }}>
+                        <div style={{ fontWeight: 700, fontSize: 13 }}>Jadwal Home Visit</div>
+                        <div style={{ fontSize: 11, opacity: 0.85, marginTop: 1 }}>Sofa & Springbed — cuci di tempat</div>
+                    </div>
+                    <span style={{ marginLeft: 'auto', fontSize: 18, opacity: 0.7 }}>›</span>
+                </button>
+
+                {/* ── Sort ── */}
+                <div style={S.sortRow}>
+                    <span style={S.sortLabel}>Urutkan:</span>
+                    <div style={S.toggleGroup}>
+                        <button
+                            onClick={() => setSortBy('urgent')}
+                            style={{ ...S.toggleBtn, ...(sortBy === 'urgent' ? S.toggleActive : {}) }}
+                        >
+                            <Flame size={11} /> Paling Lama
+                        </button>
+                        <button
+                            onClick={() => setSortBy('terbaru')}
+                            style={{ ...S.toggleBtn, ...(sortBy === 'terbaru' ? S.toggleActive : {}) }}
+                        >
+                            <AlarmClock size={11} /> Terbaru
+                        </button>
+                    </div>
+                </div>
+
+                {/* ── Order List ── */}
                 {isLoading ? (
-                    <div style={styles.loadingWrap}>
-                        <div style={styles.spinner} />
-                        <p style={{ color: '#94a3b8', fontSize: 13 }}>Memuat data...</p>
+                    <div style={S.loadingWrap}>
+                        <div style={S.spinner} />
+                        <div style={{ color: '#94a3b8', fontSize: 13, marginTop: 12 }}>Memuat data...</div>
                     </div>
                 ) : (
                     <>
-                        {/* Order Aktif */}
                         {orderAktif.length > 0 && (
                             <>
-                                <div style={styles.sectionHeader}>
-                                    🔥 Order Aktif
-                                    <span style={styles.sectionCount}>{orderAktif.length}</span>
+                                <div style={S.sectionHeader}>
+                                    <Flame size={13} color="#ef4444" />
+                                    Order Aktif
+                                    <span style={S.sectionCount}>{orderAktif.length}</span>
                                 </div>
-                                {orderAktif.map((order) => (
-                                    <OrderRow key={order.id} order={order} onClick={onOrderClick} isReady={false} />
-                                ))}
+                                <div style={S.cardList}>
+                                    {orderAktif.map((order) => (
+                                        <OrderRow key={order.id} order={order} onClick={onOrderClick} isReady={false} />
+                                    ))}
+                                </div>
                             </>
                         )}
 
-                        {/* Ready Anter — redup */}
                         {orderReady.length > 0 && (
                             <>
-                                <div style={{ ...styles.sectionHeader, color: '#22c55e', borderLeftColor: '#22c55e' }}>
-                                    ✅ Ready Anter
-                                    <span style={{ ...styles.sectionCount, backgroundColor: '#dcfce7', color: '#15803d' }}>
+                                <div style={{ ...S.sectionHeader, color: '#15803d', borderLeftColor: '#22c55e' }}>
+                                    <CheckCircle size={13} color="#22c55e" />
+                                    Ready Anter
+                                    <span style={{ ...S.sectionCount, backgroundColor: '#dcfce7', color: '#15803d' }}>
                                         {orderReady.length}
                                     </span>
                                 </div>
-                                {orderReady.map((order) => (
-                                    <OrderRow
-                                        key={order.id}
-                                        order={order}
-                                        onClick={onOrderClick}
-                                        isReady={true}
-                                        isAdmin={user?.role === 'admin' || user?.role === 'Admin'}  // ← prop baru
-                                        sisaHari={sisaHariReady(order)}                              // ← prop baru
-                                    />
-                                ))}
+                                <div style={S.cardList}>
+                                    {orderReady.map((order) => (
+                                        <OrderRow
+                                            key={order.id}
+                                            order={order}
+                                            onClick={onOrderClick}
+                                            isReady={true}
+                                            isAdmin={isAdmin}
+                                            sisaHari={sisaHariReady(order)}
+                                        />
+                                    ))}
+                                </div>
                             </>
                         )}
 
                         {orderAktif.length === 0 && orderReady.length === 0 && (
-                            <div style={styles.emptyState}>
-                                <div style={{ fontSize: 40, marginBottom: 12 }}>📋</div>
-                                <div style={{ fontSize: 13, color: '#94a3b8' }}>Data tidak ditemukan</div>
+                            <div style={S.emptyState}>
+                                <LayoutList size={40} color="#cbd5e1" style={{ marginBottom: 12 }} />
+                                <div style={{ fontWeight: 700, color: '#1e293b', marginBottom: 6 }}>
+                                    {searchQuery ? 'Tidak ditemukan' : 'Belum ada order'}
+                                </div>
+                                <div style={{ fontSize: 13, color: '#94a3b8' }}>
+                                    {searchQuery ? 'Coba cek ejaan nama atau nomor HP.' : 'Data order akan muncul di sini.'}
+                                </div>
                             </div>
                         )}
                     </>
                 )}
             </div>
 
-            {/* FAB */}
-            {(user?.role === 'admin' || user?.role === 'Admin') && (
-                <button style={styles.fab} onClick={() => navigate('/admin/kasir')}>+</button>
+            {/* ── FAB ── */}
+            {isAdmin && (
+                <button className="fixed-fab" style={S.fab} onClick={() => navigate('/admin/kasir')}>
+                    <Plus size={28} color="#fff" />
+                </button>
             )}
 
-            {(user?.role === 'admin' || user?.role === 'Admin') && (
-                <div style={styles.bottomNav}><Navbar /></div>
+            {/* ── Navbar ── */}
+            {isAdmin && (
+                <div className="fixed-bottom-bar" style={S.navbarInner}>
+                    <Navbar />
+                </div>
             )}
+
+            <style>{`
+                @keyframes spin { to { transform: rotate(360deg); } }
+            `}</style>
         </div>
     );
 }
 
-const styles = {
-    container: { display: 'flex', flexDirection: 'column', height: '100vh', position: 'relative', backgroundColor: '#fff' },
-    header: { padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f1f5f9' },
-    logoutBtn: { fontSize: '12px', border: 'none', background: 'none', color: '#ef4444', cursor: 'pointer' },
-    searchWrapper: { display: 'flex', alignItems: 'center', border: '1px solid #e2e8f0', borderRadius: '25px', padding: '8px 16px', margin: '12px 16px 4px' },
-    searchInput: { border: 'none', outline: 'none', flex: 1, marginLeft: '8px', fontSize: '14px' },
-    filterGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', padding: '4px 16px' },
-    filterBtn: { padding: '8px 4px', borderRadius: '8px', borderWidth: '1px', borderStyle: 'solid', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' },
-    filterInactive: { borderColor: '#e2e8f0', backgroundColor: '#fff', color: '#64748b' },
-    filterActive: { borderColor: '#04CDCD', backgroundColor: '#04CDCD', color: '#fff' },
-    sortContainer: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 16px', backgroundColor: '#f8fafc' },
-    statsBar: { padding: '8px 16px', backgroundColor: '#eff6ff', color: '#1e40af', fontSize: '12px', textAlign: 'center', borderBottom: '1px solid #dbeafe' },
-    toggleGroup: { display: 'flex', gap: '4px' },
-    toggleBtn: { padding: '5px 8px', fontSize: '11px', borderRadius: '6px', borderWidth: '1px', borderStyle: 'solid', borderColor: '#cbd5e1', cursor: 'pointer', backgroundColor: '#fff' }, toggleActive: { backgroundColor: '#1e293b', color: '#fff', borderColor: '#1e293b' },
-    listContainer: { flex: 1, overflowY: 'auto', paddingBottom: '80px' },
+const S = {
+    page: {
+        minHeight: '100vh',
+        backgroundColor: '#f8fafc',
+        fontFamily: "'Inter', 'Plus Jakarta Sans', sans-serif",
+        paddingBottom: 130,
+    },
+    hero: {
+        background: 'linear-gradient(135deg, #1A2E35 0%, #0d2028 100%)',
+        padding: '20px 20px 0',
+    },
+    heroInner: {
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+        marginBottom: 20,
+        maxWidth: 500,
+        margin: '0 auto 20px',
+    },
+    logoWrap: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+    },
+    logoIconWrap: {
+        width: 36,
+        height: 36,
+        background: '#04CDCD22',
+        borderRadius: 10,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    brand: {
+        fontSize: 20,
+        fontWeight: 800,
+        color: '#04CDCD',
+        letterSpacing: '-0.3px',
+    },
+    tagline: {
+        fontSize: 10,
+        color: '#6B8894',
+        marginTop: 1,
+    },
+    logoutBtn: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 5,
+        background: 'none',
+        border: '1px solid #2C4A54',
+        color: '#6B8894',
+        padding: '5px 12px',
+        borderRadius: 6,
+        fontSize: 11,
+        cursor: 'pointer',
+        fontFamily: 'inherit',
+    },
+    statsRow: {
+        display: 'flex',
+        justifyContent: 'center',
+        background: 'rgba(255,255,255,0.05)',
+        borderRadius: '12px 12px 0 0',
+        padding: '12px 20px',
+        maxWidth: 500,
+        margin: '0 auto',
+    },
+    statChip: {
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: 2,
+    },
+    statNum: {
+        fontSize: 20,
+        fontWeight: 800,
+        color: '#fff',
+    },
+    statLbl: {
+        fontSize: 9,
+        color: '#6B8894',
+        textTransform: 'uppercase',
+        letterSpacing: '0.5px',
+        fontWeight: 600,
+    },
+    statDivider: {
+        width: 1,
+        background: 'rgba(255,255,255,0.2)',
+        margin: '0 4px',
+    },
+    contentWrap: {
+        maxWidth: 500,
+        margin: '0 auto',
+        padding: '16px 16px 0',
+    },
+    searchWrap: {
+        position: 'relative',
+        marginBottom: 12,
+        display: 'flex',
+        alignItems: 'center',
+    },
+    searchIconWrap: {
+        position: 'absolute',
+        left: 14,
+        top: '50%',
+        transform: 'translateY(-50%)',
+        display: 'flex',
+        alignItems: 'center',
+        pointerEvents: 'none',
+        zIndex: 1,
+    },
+    searchInput: {
+        width: '100%',
+        padding: '12px 40px 12px 42px',
+        borderRadius: 12,
+        border: '1.5px solid #e2e8f0',
+        fontSize: 14,
+        fontFamily: 'inherit',
+        outline: 'none',
+        boxSizing: 'border-box',
+        backgroundColor: '#fff',
+        color: '#1e293b',
+    },
+    searchClear: {
+        position: 'absolute',
+        right: 10,
+        top: '50%',
+        transform: 'translateY(-50%)',
+        background: '#f1f5f9',
+        border: 'none',
+        borderRadius: '50%',
+        width: 24,
+        height: 24,
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 1,
+    },
+    filterRow: {
+        display: 'flex',
+        gap: 8,
+        marginBottom: 12,
+        overflowX: 'auto',
+        paddingBottom: 2,
+    },
+    filterChip: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 5,
+        padding: '7px 12px',
+        borderRadius: 20,
+        border: '1.5px solid',
+        fontSize: 12,
+        cursor: 'pointer',
+        whiteSpace: 'nowrap',
+        fontFamily: 'inherit',
+        flexShrink: 0,
+        transition: 'all 0.15s',
+    },
+    homeVisitBtn: {
+        width: '100%',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        padding: '14px 16px',
+        background: 'linear-gradient(135deg, #04CDCD, #028585)',
+        color: '#fff',
+        border: 'none',
+        borderRadius: 14,
+        cursor: 'pointer',
+        fontFamily: 'inherit',
+        marginBottom: 12,
+        boxShadow: '0 4px 16px rgba(4,205,205,0.25)',
+        boxSizing: 'border-box',
+    },
+    sortRow: {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '6px 0',
+        marginBottom: 12,
+    },
+    sortLabel: {
+        fontSize: 12,
+        color: '#64748b',
+    },
+    toggleGroup: {
+        display: 'flex',
+        gap: 4,
+    },
+    toggleBtn: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 5,
+        padding: '5px 10px',
+        fontSize: 11,
+        borderRadius: 8,
+        border: '1px solid #e2e8f0',
+        cursor: 'pointer',
+        backgroundColor: '#fff',
+        fontFamily: 'inherit',
+        color: '#64748b',
+    },
+    toggleActive: {
+        backgroundColor: '#1e293b',
+        color: '#fff',
+        borderColor: '#1e293b',
+    },
     sectionHeader: {
-        padding: '8px 16px', fontSize: 11, fontWeight: 800,
-        color: '#ef4444', backgroundColor: '#f8fafc',
+        fontSize: 11,
+        fontWeight: 800,
+        color: '#ef4444',
         borderLeft: '3px solid #ef4444',
-        textTransform: 'uppercase', letterSpacing: '0.5px',
-        display: 'flex', alignItems: 'center', gap: 8,
-        position: 'sticky', top: 0, zIndex: 5,
+        padding: '6px 12px',
+        backgroundColor: '#fff',
+        textTransform: 'uppercase',
+        letterSpacing: '0.5px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        borderRadius: 8,
+        marginBottom: 10,
     },
     sectionCount: {
-        backgroundColor: '#fee2e2', color: '#ef4444',
-        borderRadius: 10, padding: '1px 8px', fontSize: 11,
+        backgroundColor: '#fee2e2',
+        color: '#ef4444',
+        borderRadius: 10,
+        padding: '1px 8px',
+        fontSize: 11,
     },
-    loadingWrap: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', paddingTop: 60, gap: 12 },
-    spinner: { width: 32, height: 32, border: '3px solid #f3f3f3', borderTop: '3px solid #04CDCD', borderRadius: '50%', animation: 'spin 1s linear infinite' },
-    emptyState: { textAlign: 'center', paddingTop: 60 },
-    fab: { position: 'absolute', bottom: '80px', right: '20px', width: '56px', height: '56px', borderRadius: '50%', backgroundColor: '#04CDCD', color: '#fff', border: 'none', fontSize: '28px', boxShadow: '0 4px 10px rgba(4,205,205,0.4)', cursor: 'pointer', zIndex: 10 },
-    bottomNav: { width: '100%', borderTop: '1px solid #e2e8f0', backgroundColor: '#fff' }
+    cardList: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 10,
+        marginBottom: 16,
+    },
+    loadingWrap: {
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        padding: '60px 20px',
+    },
+    spinner: {
+        width: 32,
+        height: 32,
+        border: '3px solid #f1f5f9',
+        borderTop: '3px solid #04CDCD',
+        borderRadius: '50%',
+        animation: 'spin 0.8s linear infinite',
+    },
+    emptyState: {
+        textAlign: 'center',
+        padding: '48px 20px',
+        background: '#fff',
+        borderRadius: 16,
+        border: '1px solid #f1f5f9',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+    },
+    fab: {
+        width: 56,
+        height: 56,
+        borderRadius: '50%',
+        backgroundColor: '#04CDCD',
+        color: '#fff',
+        border: 'none',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        boxShadow: '0 4px 10px rgba(4,205,205,0.4)',
+        cursor: 'pointer',
+    },
+    navbarInner: {
+        borderTop: '1px solid #e2e8f0',
+        backgroundColor: '#fff',
+    },
 };
 
 export default OrderList;

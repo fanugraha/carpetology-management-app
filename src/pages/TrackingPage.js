@@ -2,6 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot, query, orderBy } from "firebase/firestore";
 import { db } from '../firebase';
 import { useNavigate } from 'react-router-dom';
+import {
+    Search, X, Home, MessageCircle, Clock, CheckCircle,
+    WashingMachine, Layers, CalendarDays, Timer, Package,
+    FileText, ClipboardList, Settings,
+} from 'lucide-react';
 
 function TrackingPage() {
     const [orders, setOrders] = useState([]);
@@ -16,7 +21,6 @@ function TrackingPage() {
             const data = snapshot.docs.map(doc => {
                 const d = doc.data();
 
-                // Auto-hide: Ready Anter lebih dari 7 hari
                 const isAutoHidden = (() => {
                     if ((d.status_order || d.status) !== 'Ready Anter') return false;
                     const ts = d.ready_at || d.created_at;
@@ -37,7 +41,7 @@ function TrackingPage() {
                     is_hidden: d.is_hidden || false,
                     isAutoHidden,
                 };
-            }).filter(o => !o.is_hidden && !o.isAutoHidden); // filter hidden & auto-hidden
+            }).filter(o => !o.is_hidden && !o.isAutoHidden);
 
             setOrders(data);
             setIsLoading(false);
@@ -75,7 +79,8 @@ function TrackingPage() {
                 return {
                     label: 'Siap Diambil',
                     bg: '#dcfce7', text: '#15803d',
-                    border: '#86efac', icon: '✅',
+                    border: '#86efac',
+                    icon: <CheckCircle size={12} />,
                     dotColor: '#22c55e',
                     progressColor: '#22c55e',
                     step: 3,
@@ -84,7 +89,8 @@ function TrackingPage() {
                 return {
                     label: 'Sedang Diproses',
                     bg: '#fef3c7', text: '#b45309',
-                    border: '#fcd34d', icon: '🧼',
+                    border: '#fcd34d',
+                    icon: <WashingMachine size={12} />,
                     dotColor: '#f59e0b',
                     progressColor: '#f59e0b',
                     step: 2,
@@ -93,7 +99,8 @@ function TrackingPage() {
                 return {
                     label: 'Dalam Antrian',
                     bg: '#f1f5f9', text: '#475569',
-                    border: '#cbd5e1', icon: '⏳',
+                    border: '#cbd5e1',
+                    icon: <Clock size={12} />,
                     dotColor: '#94a3b8',
                     progressColor: '#04CDCD',
                     step: 1,
@@ -135,15 +142,21 @@ function TrackingPage() {
             <div style={S.hero}>
                 <div style={S.heroInner}>
                     <div style={S.logoWrap}>
-                        <span style={S.logoIcon}>🧺</span>
+                        <div style={S.logoIconWrap}>
+                            <Layers size={20} color="#04CDCD" />
+                        </div>
                         <div>
                             <div style={S.brand}>Carpetology</div>
                             <div style={S.tagline}>Cuci Karpet & Laundry Professional</div>
                         </div>
                     </div>
                     <div style={S.heroMeta}>
-                        <span style={S.hours}>🕒 08.00–16.00 WIB</span>
+                        <div style={S.hours}>
+                            <Clock size={11} color="#6B8894" />
+                            08.00–16.00 WIB
+                        </div>
                         <button onClick={() => navigate('/admin-login')} style={S.adminBtn}>
+                            <Settings size={11} />
                             Admin
                         </button>
                     </div>
@@ -171,7 +184,7 @@ function TrackingPage() {
             {/* ── HOME VISIT BANNER ── */}
             <div style={S.contentWrap}>
                 <button onClick={() => navigate('/jadwal')} style={S.homeVisitBtn}>
-                    <span style={{ fontSize: 20 }}>🏠</span>
+                    <Home size={20} color="#fff" />
                     <div style={{ textAlign: 'left' }}>
                         <div style={{ fontWeight: 700, fontSize: 13 }}>Jadwal Home Service</div>
                         <div style={{ fontSize: 11, opacity: 0.85, marginTop: 1 }}>Sofa & Springbed — cuci di tempat</div>
@@ -181,7 +194,9 @@ function TrackingPage() {
 
                 {/* ── SEARCH ── */}
                 <div style={S.searchWrap}>
-                    <span style={S.searchIcon}>🔍</span>
+                    <span style={S.searchIcon}>
+                        <Search size={16} color="#94a3b8" />
+                    </span>
                     <input
                         type="text"
                         placeholder="Cari nama atau nomor HP..."
@@ -190,16 +205,18 @@ function TrackingPage() {
                         style={S.searchInput}
                     />
                     {searchTerm && (
-                        <button onClick={() => setSearchTerm('')} style={S.searchClear}>×</button>
+                        <button onClick={() => setSearchTerm('')} style={S.searchClear}>
+                            <X size={14} color="#64748b" />
+                        </button>
                     )}
                 </div>
 
                 {/* ── FILTER CHIPS ── */}
                 <div style={S.filterRow}>
                     {[
-                        { id: 'Semua', label: `Semua (${orders.length})` },
-                        { id: 'Proses', label: `⏳ Proses (${countProses})` },
-                        { id: 'Siap Ambil', label: `✅ Siap (${countReady})` },
+                        { id: 'Semua', label: `Semua (${orders.length})`, icon: <ClipboardList size={11} /> },
+                        { id: 'Proses', label: `Proses (${countProses})`, icon: <Clock size={11} /> },
+                        { id: 'Siap Ambil', label: `Siap (${countReady})`, icon: <CheckCircle size={11} /> },
                     ].map(f => (
                         <button
                             key={f.id}
@@ -212,7 +229,7 @@ function TrackingPage() {
                                 fontWeight: filter === f.id ? 700 : 600,
                             }}
                         >
-                            {f.label}
+                            {f.icon} {f.label}
                         </button>
                     ))}
                 </div>
@@ -225,8 +242,10 @@ function TrackingPage() {
                     </div>
                 ) : filteredOrders.length === 0 ? (
                     <div style={S.emptyState}>
-                        <div style={{ fontSize: 40, marginBottom: 12 }}>
-                            {searchTerm ? '🔍' : '📋'}
+                        <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'center' }}>
+                            {searchTerm
+                                ? <Search size={40} color="#cbd5e1" />
+                                : <ClipboardList size={40} color="#cbd5e1" />}
                         </div>
                         <div style={{ fontWeight: 700, color: '#1e293b', marginBottom: 6 }}>
                             {searchTerm ? 'Tidak ditemukan' : 'Belum ada order'}
@@ -243,7 +262,7 @@ function TrackingPage() {
                                 rel="noreferrer"
                                 style={{ ...S.waBtn, marginTop: 16, display: 'inline-flex' }}
                             >
-                                💬 Tanya via WhatsApp
+                                <MessageCircle size={14} /> Tanya via WhatsApp
                             </a>
                         )}
                     </div>
@@ -286,7 +305,7 @@ function TrackingPage() {
                                                             background: isDone || isActive ? statusCfg.dotColor : '#e2e8f0',
                                                             boxShadow: isActive ? `0 0 0 3px ${statusCfg.dotColor}33` : 'none',
                                                         }}>
-                                                            {isDone ? '✓' : stepNum}
+                                                            {isDone ? <CheckCircle size={12} color="#fff" /> : <span style={{ fontSize: 10, fontWeight: 700, color: '#fff' }}>{stepNum}</span>}
                                                         </div>
                                                         <div style={{
                                                             ...S.stepLabel,
@@ -310,11 +329,15 @@ function TrackingPage() {
                                     {/* Info rows */}
                                     <div style={S.infoGrid}>
                                         <div style={S.infoCell}>
-                                            <div style={S.infoLabel}>Tgl Masuk</div>
+                                            <div style={S.infoLabel}>
+                                                <CalendarDays size={9} /> Tgl Masuk
+                                            </div>
                                             <div style={S.infoVal}>{order.tanggal || '-'}</div>
                                         </div>
                                         <div style={S.infoCell}>
-                                            <div style={S.infoLabel}>Estimasi Selesai</div>
+                                            <div style={S.infoLabel}>
+                                                <Timer size={9} /> Estimasi Selesai
+                                            </div>
                                             <div style={{ ...S.infoVal, color: order.status === 'Ready Anter' ? '#15803d' : '#1e293b' }}>
                                                 {est.tgl} <span style={{ color: '#64748b', fontWeight: 500 }}>({est.info})</span>
                                             </div>
@@ -324,26 +347,30 @@ function TrackingPage() {
                                     {/* Items ringkasan */}
                                     {order.items.length > 0 && (
                                         <div style={S.itemsWrap}>
-                                            🧺 {order.items.map((it, i) => (
-                                                <span key={i}>
-                                                    {i > 0 && ', '}
-                                                    {it.qty}× {it.nama}
-                                                    {it.satuan === 'meter' && it.luas ? ` (${Number(it.luas).toFixed(1)}m²)` : ''}
-                                                </span>
-                                            ))}
+                                            <Package size={12} style={{ flexShrink: 0, marginTop: 1 }} />
+                                            <span>
+                                                {order.items.map((it, i) => (
+                                                    <span key={i}>
+                                                        {i > 0 && ', '}
+                                                        {it.qty}× {it.nama}
+                                                        {it.satuan === 'meter' && it.luas ? ` (${Number(it.luas).toFixed(1)}m²)` : ''}
+                                                    </span>
+                                                ))}
+                                            </span>
                                         </div>
                                     )}
 
                                     {/* Catatan */}
                                     {order.catatan && (
                                         <div style={S.noteBox}>
-                                            📝 {order.catatan}
+                                            <FileText size={12} style={{ flexShrink: 0, marginTop: 1 }} />
+                                            <span>{order.catatan}</span>
                                         </div>
                                     )}
 
                                     {/* CTA */}
                                     <a href={waLink} target="_blank" rel="noreferrer" style={S.waBtn}>
-                                        <span>💬</span> Tanya Progres Order
+                                        <MessageCircle size={14} /> Tanya Progres Order
                                     </a>
                                 </div>
                             );
@@ -353,9 +380,13 @@ function TrackingPage() {
 
                 {/* Footer */}
                 <div style={S.footer}>
-                    <div style={{ fontWeight: 700, color: '#04CDCD', marginBottom: 4 }}>🧺 Carpetology</div>
+                    <div style={{ fontWeight: 700, color: '#04CDCD', marginBottom: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                        <Layers size={14} color="#04CDCD" /> Carpetology
+                    </div>
                     <div style={{ fontSize: 11, color: '#94a3b8' }}>Jasa Cuci Karpet & Laundry Professional</div>
-                    <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>🕒 Jam operasional: 08.00 – 16.00 WIB</div>
+                    <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                        <Clock size={10} color="#94a3b8" /> Jam operasional: 08.00 – 16.00 WIB
+                    </div>
                 </div>
             </div>
 
@@ -369,7 +400,6 @@ function TrackingPage() {
             <style>{`
                 @keyframes spin { to { transform: rotate(360deg); } }
                 @keyframes fadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
-                .order-card-animate { animation: fadeUp 0.25s ease-out; }
             `}</style>
         </div>
     );
@@ -382,8 +412,6 @@ const S = {
         fontFamily: "'Inter', 'Plus Jakarta Sans', sans-serif",
         paddingBottom: 80,
     },
-
-    // Hero
     hero: {
         background: 'linear-gradient(135deg, #1A2E35 0%, #0d2028 100%)',
         padding: '20px 20px 0',
@@ -401,11 +429,14 @@ const S = {
         alignItems: 'center',
         gap: 10,
     },
-    logoIcon: {
-        fontSize: 28,
+    logoIconWrap: {
+        width: 36,
+        height: 36,
         background: '#04CDCD22',
         borderRadius: 10,
-        padding: '4px 8px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     brand: {
         fontSize: 20,
@@ -425,11 +456,17 @@ const S = {
         paddingTop: 4,
     },
     hours: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 4,
         fontSize: 11,
         color: '#6B8894',
         fontWeight: 600,
     },
     adminBtn: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 5,
         background: 'none',
         border: '1px solid #2C4A54',
         color: '#6B8894',
@@ -439,8 +476,6 @@ const S = {
         cursor: 'pointer',
         fontFamily: 'inherit',
     },
-
-    // Stats
     statsRow: {
         display: 'flex',
         justifyContent: 'center',
@@ -462,7 +497,6 @@ const S = {
         fontSize: 20,
         fontWeight: 800,
         color: '#fff',
-        fontFamily: "'Space Grotesk', monospace",
     },
     statLbl: {
         fontSize: 9,
@@ -471,15 +505,11 @@ const S = {
         letterSpacing: '0.5px',
         fontWeight: 600,
     },
-
-    // Content
     contentWrap: {
         maxWidth: 500,
         margin: '0 auto',
         padding: '16px 16px 0',
     },
-
-    // Home visit button
     homeVisitBtn: {
         width: '100%',
         display: 'flex',
@@ -494,20 +524,23 @@ const S = {
         fontFamily: 'inherit',
         marginBottom: 16,
         boxShadow: '0 4px 16px rgba(4,205,205,0.25)',
+        boxSizing: 'border-box',
     },
-
-    // Search
     searchWrap: {
         position: 'relative',
         marginBottom: 12,
+        display: 'flex',
+        alignItems: 'center',
     },
     searchIcon: {
         position: 'absolute',
         left: 14,
         top: '50%',
         transform: 'translateY(-50%)',
-        fontSize: 16,
+        display: 'flex',
+        alignItems: 'center',
         pointerEvents: 'none',
+        zIndex: 1,
     },
     searchInput: {
         width: '100%',
@@ -524,24 +557,20 @@ const S = {
     },
     searchClear: {
         position: 'absolute',
-        right: 12,
+        right: 10,
         top: '50%',
         transform: 'translateY(-50%)',
         background: '#f1f5f9',
         border: 'none',
         borderRadius: '50%',
-        width: 22,
-        height: 22,
+        width: 24,
+        height: 24,
         cursor: 'pointer',
-        fontSize: 14,
-        color: '#64748b',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        lineHeight: 1,
+        zIndex: 1,
     },
-
-    // Filter
     filterRow: {
         display: 'flex',
         gap: 8,
@@ -550,6 +579,9 @@ const S = {
         paddingBottom: 2,
     },
     filterChip: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 5,
         padding: '7px 14px',
         borderRadius: 20,
         border: '1.5px solid',
@@ -560,8 +592,6 @@ const S = {
         transition: 'all 0.15s',
         flexShrink: 0,
     },
-
-    // Card
     card: {
         background: '#fff',
         borderRadius: 16,
@@ -588,6 +618,9 @@ const S = {
         fontFamily: 'monospace',
     },
     statusBadge: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 5,
         padding: '5px 10px',
         borderRadius: 20,
         fontSize: 11,
@@ -595,8 +628,6 @@ const S = {
         flexShrink: 0,
         whiteSpace: 'nowrap',
     },
-
-    // Progress steps
     stepsWrap: {
         display: 'flex',
         alignItems: 'center',
@@ -619,9 +650,6 @@ const S = {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        fontSize: 10,
-        fontWeight: 700,
-        color: '#fff',
         transition: 'all 0.2s',
     },
     stepLabel: {
@@ -639,8 +667,6 @@ const S = {
         marginBottom: 14,
         transition: 'background 0.2s',
     },
-
-    // Info grid
     infoGrid: {
         display: 'grid',
         gridTemplateColumns: '1fr 1fr',
@@ -653,6 +679,9 @@ const S = {
         padding: '8px 10px',
     },
     infoLabel: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 4,
         fontSize: 10,
         color: '#94a3b8',
         fontWeight: 600,
@@ -665,9 +694,10 @@ const S = {
         fontWeight: 700,
         color: '#1e293b',
     },
-
-    // Items
     itemsWrap: {
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 6,
         fontSize: 11,
         color: '#64748b',
         background: '#f8fafc',
@@ -677,9 +707,10 @@ const S = {
         lineHeight: 1.5,
         fontStyle: 'italic',
     },
-
-    // Note
     noteBox: {
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 6,
         background: '#fff7ed',
         color: '#c2410c',
         fontSize: 11,
@@ -689,8 +720,6 @@ const S = {
         border: '1px solid #fed7aa',
         lineHeight: 1.5,
     },
-
-    // WA button
     waBtn: {
         display: 'flex',
         alignItems: 'center',
@@ -708,8 +737,6 @@ const S = {
         transition: 'all 0.15s',
         cursor: 'pointer',
     },
-
-    // Empty & loading
     loadingWrap: {
         display: 'flex',
         flexDirection: 'column',
@@ -731,16 +758,12 @@ const S = {
         borderRadius: 16,
         border: '1px solid #f1f5f9',
     },
-
-    // Footer
     footer: {
         textAlign: 'center',
         padding: '32px 20px 16px',
         color: '#94a3b8',
         fontSize: 12,
     },
-
-    // FAB
     fab: {
         position: 'fixed',
         bottom: 24,

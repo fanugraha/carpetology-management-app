@@ -1,9 +1,15 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { db } from '../firebase';
-import { collection, onSnapshot, query, where, orderBy } from 'firebase/firestore';
-import './Jadwalhomevisit.css';
 import { useAuth } from '../context/AuthContext';
+import { collection, onSnapshot, query } from 'firebase/firestore';
+import {
+    ArrowLeft, ChevronLeft, ChevronRight, Plus,
+    Sunrise, Sun, UserCircle, Phone, CalendarDays, Loader2,
+} from 'lucide-react';
+import './Jadwalhomevisit.css';
+
+
 
 const HARI = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
 const HARI_FULL = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
@@ -15,8 +21,7 @@ function toDateKey(d) {
 }
 
 function getWeekDays(anchor) {
-  // Senin s/d Sabtu dari anchor week
-  const day = anchor.getDay(); // 0=Sun
+  const day = anchor.getDay();
   const monday = new Date(anchor);
   monday.setDate(anchor.getDate() - (day === 0 ? 6 : day - 1));
   return Array.from({ length: 6 }, (_, i) => {
@@ -30,15 +35,13 @@ export default function JadwalHomeVisit() {
   const navigate = useNavigate();
   const today = new Date();
   const { user } = useAuth();
-  const isAdmin = user?.role === 'admin' || user?.role === 'Admin';
+  const canAddBooking = user?.role === 'admin' || user?.role === 'staff';
 
   const [anchor, setAnchor] = useState(() => new Date());
   const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
 
-
-  // ── Fetch semua booking dari Firestore ──
   useEffect(() => {
     const q = query(collection(db, 'bookings'));
     const unsub = onSnapshot(q, (snap) => {
@@ -50,18 +53,15 @@ export default function JadwalHomeVisit() {
 
   const weekDays = useMemo(() => getWeekDays(anchor), [anchor]);
 
-  // ── Bookings untuk tanggal terpilih ──
   const selectedKey = toDateKey(selectedDate);
   const dayBookings = useMemo(() => bookings.filter(b => b.tanggal === selectedKey), [bookings, selectedKey]);
 
   const sesi1 = dayBookings.filter(b => b.sesi === 1 || b.sesi === '1');
   const sesi2 = dayBookings.filter(b => b.sesi === 2 || b.sesi === '2');
 
-  // ── Summary minggu ini ──
   const weekKeys = new Set(weekDays.map(toDateKey));
   const weekBookings = bookings.filter(b => weekKeys.has(b.tanggal));
   const totalMingguIni = weekBookings.length;
-  const totalTerisi = weekBookings.length;
 
   function prevWeek() {
     const d = new Date(anchor);
@@ -78,34 +78,36 @@ export default function JadwalHomeVisit() {
     return `${HARI_FULL[selectedDate.getDay()]}, ${selectedDate.getDate()} ${BULAN_FULL[selectedDate.getMonth()]} ${selectedDate.getFullYear()}`;
   }
 
-  // ── Render satu booking card ──
   function BookingCard({ booking }) {
     if (!booking) return (
       <div className="jhv-booking-card jhv-booking-card--empty">
-        <div className="jhv-booking-card__avatar jhv-booking-card__avatar--empty">➕</div>
+        <div className="jhv-booking-card__avatar jhv-booking-card__avatar--empty">
+          <Plus size={16} color="#94a3b8" />
+        </div>
         <span className="jhv-booking-card__empty-text">Slot tersedia</span>
       </div>
     );
     return (
       <div className="jhv-booking-card" onClick={() => navigate(`/admin/home-visit/${booking.id}`)}>
-        <div className="jhv-booking-card__avatar">🧹</div>
+        <div className="jhv-booking-card__avatar">
+          <UserCircle size={20} color="#04CDCD" />
+        </div>
         <div className="jhv-booking-card__info">
           <div className="jhv-booking-card__name">{booking.nama}</div>
           <div className="jhv-booking-card__sub">{booking.no_hp || '-'}</div>
         </div>
         <div className="jhv-status-dot jhv-status-dot--confirmed" />
-        <span className="jhv-booking-card__chevron">›</span>
+        <ChevronRight size={16} color="#94a3b8" />
       </div>
     );
   }
 
-  // ── Render sesi section ──
-  function SesiSection({ num, emoji, label, time, items }) {
+  function SesiSection({ num, icon, label, time, items }) {
     return (
       <div className="jhv-sesi-section">
         <div className="jhv-sesi-header">
           <div className="jhv-sesi-header__pill">
-            <span className="jhv-sesi-header__emoji">{emoji}</span>
+            <span className="jhv-sesi-header__emoji">{icon}</span>
             <span className="jhv-sesi-header__label">{label}</span>
             <span className="jhv-sesi-header__time">{time}</span>
           </div>
@@ -125,7 +127,7 @@ export default function JadwalHomeVisit() {
       {/* ── Header ── */}
       <div className="jhv-header">
         <button className="jhv-header__back" onClick={() => navigate(-1)}>
-          ← Kembali
+          <ArrowLeft size={15} /> Kembali
         </button>
         <p className="jhv-header__eyebrow">Carpetology</p>
         <h1 className="jhv-header__title">Jadwal Home Visit</h1>
@@ -134,7 +136,9 @@ export default function JadwalHomeVisit() {
       {/* ── Week strip ── */}
       <div style={{ padding: '0 16px' }}>
         <div className="jhv-week-card">
-          <button className="jhv-week-nav" onClick={prevWeek}>‹</button>
+          <button className="jhv-week-nav" onClick={prevWeek}>
+            <ChevronLeft size={18} color="#475569" />
+          </button>
 
           <div className="jhv-week-days">
             {weekDays.map((d, i) => {
@@ -162,7 +166,9 @@ export default function JadwalHomeVisit() {
             })}
           </div>
 
-          <button className="jhv-week-nav" onClick={nextWeek}>›</button>
+          <button className="jhv-week-nav" onClick={nextWeek}>
+            <ChevronRight size={18} color="#475569" />
+          </button>
         </div>
       </div>
 
@@ -191,17 +197,21 @@ export default function JadwalHomeVisit() {
 
         {loading ? (
           <div className="jhv-loading">
-            <div className="jhv-spinner" />
+            <Loader2 size={28} color="#04CDCD" className="jhv-spinner" />
             <span className="jhv-loading__text">Memuat data...</span>
           </div>
         ) : (
           <>
             <SesiSection
-              num={1} emoji="🌅" label="Sesi 1" time="09:00 – 11:00"
+              num={1}
+              icon={<Sunrise size={14} color="#f59e0b" />}
+              label="Sesi 1" time="09:00 – 11:00"
               items={sesi1}
             />
             <SesiSection
-              num={2} emoji="🌤️" label="Sesi 2" time="13:00 – 15:00"
+              num={2}
+              icon={<Sun size={14} color="#0ea5e9" />}
+              label="Sesi 2" time="13:00 – 15:00"
               items={sesi2}
             />
           </>
@@ -209,8 +219,11 @@ export default function JadwalHomeVisit() {
       </div>
 
       {/* FAB tambah */}
-      {isAdmin && (
-        <button className="jhv-fab" onClick={() => navigate('/tambah-booking')}>+</button>
-      )}    </div>
+      {canAddBooking && (
+        <button className="jhv-fab" onClick={() => navigate('/admin/tambah-booking')}>
+          <Plus size={24} color="#fff" />
+        </button>
+      )}
+    </div>
   );
 }

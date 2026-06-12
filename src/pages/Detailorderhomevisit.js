@@ -18,7 +18,6 @@ export default function DetailOrderHomeVisit() {
     const { id } = useParams();
     const navigate = useNavigate();
     const { user } = useAuth();
-    const isAdmin = user?.role === 'admin' || user?.role === 'Admin';
 
     const [booking, setBooking] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -203,7 +202,7 @@ export default function DetailOrderHomeVisit() {
             </div>
 
             {/* ── Bottom action bar ── */}
-            {isAdmin && (
+            {user?.role === 'admin' && (
                 <div className="dohv-actions">
                     <button className="dohv-btn dohv-btn--danger" onClick={() => setShowDeleteModal(true)}>
                         🗑️ Hapus

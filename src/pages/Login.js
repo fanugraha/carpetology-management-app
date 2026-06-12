@@ -2,17 +2,20 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { auth } from '../firebase';
 import { signInWithEmailAndPassword } from 'firebase/auth';
+import {
+    Mail, Lock, Eye, EyeOff, LogIn,
+    ShieldAlert, AlertCircle, Layers, ChevronLeft,
+} from 'lucide-react';
 
-// Rate limiting sederhana di client side
-const loginAttempts = { count: 0, lastAttempt: 0, lockedUntil: 0 };
+const loginAttempts = { count: 0, lockedUntil: 0 };
 
-function Login() {
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
+export default function Login() {
+    const [email, setEmail]               = useState('');
+    const [password, setPassword]         = useState('');
     const [showPassword, setShowPassword] = useState(false);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState('');
-    const [lockSeconds, setLockSeconds] = useState(0);
+    const [loading, setLoading]           = useState(false);
+    const [error, setError]               = useState('');
+    const [lockSeconds, setLockSeconds]   = useState(0);
     const navigate = useNavigate();
 
     const getErrorMessage = (code) => {
@@ -20,11 +23,11 @@ function Login() {
             case 'auth/user-not-found':
             case 'auth/wrong-password':
             case 'auth/invalid-credential':
-                return 'Email atau password salah.';
+                return 'Email atau password salah. Periksa kembali.';
             case 'auth/too-many-requests':
-                return 'Terlalu banyak percobaan. Coba lagi beberapa menit.';
+                return 'Terlalu banyak percobaan. Tunggu beberapa menit.';
             case 'auth/network-request-failed':
-                return 'Gagal terhubung. Periksa koneksi internet.';
+                return 'Tidak ada koneksi. Periksa internet Anda.';
             default:
                 return 'Login gagal. Coba lagi.';
         }
@@ -34,28 +37,20 @@ function Login() {
         e.preventDefault();
         setError('');
 
-        // Cek lockout
         const now = Date.now();
         if (loginAttempts.lockedUntil > now) {
             const sisa = Math.ceil((loginAttempts.lockedUntil - now) / 1000);
             setLockSeconds(sisa);
-            const interval = setInterval(() => {
-                const remaining = Math.ceil((loginAttempts.lockedUntil - Date.now()) / 1000);
-                if (remaining <= 0) {
-                    clearInterval(interval);
-                    setLockSeconds(0);
-                } else {
-                    setLockSeconds(remaining);
-                }
+            const iv = setInterval(() => {
+                const rem = Math.ceil((loginAttempts.lockedUntil - Date.now()) / 1000);
+                if (rem <= 0) { clearInterval(iv); setLockSeconds(0); }
+                else setLockSeconds(rem);
             }, 1000);
             return;
         }
 
-        // Validasi basic
-        if (!email.trim() || !password) {
-            setError('Email dan password wajib diisi.');
-            return;
-        }
+        if (!email.trim()) { setError('Masukkan email Anda.'); return; }
+        if (!password)     { setError('Masukkan password Anda.'); return; }
 
         setLoading(true);
         try {
@@ -64,13 +59,10 @@ function Login() {
             navigate('/admin');
         } catch (err) {
             loginAttempts.count += 1;
-            loginAttempts.lastAttempt = Date.now();
-
-            // Lock 60 detik setelah 5 gagal
             if (loginAttempts.count >= 5) {
                 loginAttempts.lockedUntil = Date.now() + 60000;
                 loginAttempts.count = 0;
-                setError('5 percobaan gagal. Akun dikunci 60 detik.');
+                setError('5 percobaan gagal. Coba lagi dalam 60 detik.');
             } else {
                 setError(getErrorMessage(err.code));
             }
@@ -80,57 +72,67 @@ function Login() {
     };
 
     const isLocked = lockSeconds > 0;
+    const canSubmit = email.trim().length > 0 && password.length > 0 && !loading && !isLocked;
 
     return (
         <div style={S.page}>
-            {/* Background decoration */}
-            <div style={S.bgDeco1} />
-            <div style={S.bgDeco2} />
 
+            {/* Back */}
+            <a href="/" style={S.backLink}>
+                <ChevronLeft size={16} />
+                Tracking order
+            </a>
+
+            {/* Card */}
             <div style={S.card}>
+
                 {/* Logo */}
-                <div style={S.logoWrap}>
-                    <div style={S.logoIcon}>🧺</div>
-                    <div style={S.logoText}>Carpetology</div>
-                    <div style={S.logoSub}>Panel Admin</div>
+                <div style={S.logoRow}>
+                    <div style={S.logoIcon}>
+                        <Layers size={20} color="#04CDCD" />
+                    </div>
+                    <span style={S.logoName}>Carpetology</span>
                 </div>
 
-                {/* Form */}
-                <form onSubmit={handleLogin} style={S.form} noValidate>
+                {/* Heading */}
+                <div style={S.heading}>
+                    <h1 style={S.title}>Masuk</h1>
+                    <p style={S.subtitle}>Panel admin · Hanya untuk staf terdaftar</p>
+                </div>
 
-                    {/* Error banner */}
-                    {error && (
-                        <div style={S.errorBanner}>
-                            <span>⚠️</span>
-                            <span>{error}</span>
+                {/* Error / lock banner */}
+                {(error || isLocked) && (
+                    <div style={isLocked ? S.lockBanner : S.errorBanner}>
+                        {isLocked
+                            ? <ShieldAlert size={17} style={{ flexShrink: 0, marginTop: 1 }} />
+                            : <AlertCircle size={17} style={{ flexShrink: 0, marginTop: 1 }} />
+                        }
+                        <div>
+                            {isLocked
+                                ? <><strong>Akun dikunci.</strong> Coba lagi dalam {lockSeconds} detik.</>
+                                : error
+                            }
                         </div>
-                    )}
+                    </div>
+                )}
 
-                    {/* Lock countdown */}
-                    {isLocked && (
-                        <div style={S.lockBanner}>
-                            <span style={{ fontSize: 18 }}>🔒</span>
-                            <div>
-                                <div style={{ fontWeight: 700, fontSize: 13 }}>Akun sementara dikunci</div>
-                                <div style={{ fontSize: 12, marginTop: 2, opacity: 0.85 }}>
-                                    Coba lagi dalam <strong>{lockSeconds}</strong> detik
-                                </div>
-                            </div>
-                        </div>
-                    )}
+                <form onSubmit={handleLogin} noValidate style={S.form}>
 
                     {/* Email */}
-                    <div style={S.fieldWrap}>
-                        <label style={S.label}>Email</label>
-                        <div style={S.inputWrap}>
-                            <span style={S.inputIcon}>✉️</span>
+                    <div style={S.fieldGroup}>
+                        <label style={S.label} htmlFor="email">Email</label>
+                        <div style={S.inputBox} className="login-inputbox">
+                            <Mail size={17} color="#94a3b8" style={S.inputIcon} />
                             <input
+                                id="email"
                                 type="email"
                                 placeholder="admin@carpetology.id"
                                 value={email}
-                                onChange={(e) => { setEmail(e.target.value); setError(''); }}
+                                onChange={e => { setEmail(e.target.value); setError(''); }}
                                 style={S.input}
                                 autoComplete="email"
+                                autoCapitalize="none"
+                                inputMode="email"
                                 disabled={loading || isLocked}
                                 required
                             />
@@ -138,16 +140,17 @@ function Login() {
                     </div>
 
                     {/* Password */}
-                    <div style={S.fieldWrap}>
-                        <label style={S.label}>Password</label>
-                        <div style={S.inputWrap}>
-                            <span style={S.inputIcon}>🔑</span>
+                    <div style={S.fieldGroup}>
+                        <label style={S.label} htmlFor="password">Password</label>
+                        <div style={S.inputBox} className="login-inputbox">
+                            <Lock size={17} color="#94a3b8" style={S.inputIcon} />
                             <input
+                                id="password"
                                 type={showPassword ? 'text' : 'password'}
                                 placeholder="••••••••"
                                 value={password}
-                                onChange={(e) => { setPassword(e.target.value); setError(''); }}
-                                style={{ ...S.input, paddingRight: 44 }}
+                                onChange={e => { setPassword(e.target.value); setError(''); }}
+                                style={{ ...S.input, paddingRight: 48 }}
                                 autoComplete="current-password"
                                 disabled={loading || isLocked}
                                 required
@@ -157,9 +160,12 @@ function Login() {
                                 onClick={() => setShowPassword(v => !v)}
                                 style={S.eyeBtn}
                                 tabIndex={-1}
-                                aria-label={showPassword ? 'Sembunyikan password' : 'Tampilkan password'}
+                                aria-label={showPassword ? 'Sembunyikan' : 'Tampilkan'}
                             >
-                                {showPassword ? '🙈' : '👁️'}
+                                {showPassword
+                                    ? <EyeOff size={17} color="#94a3b8" />
+                                    : <Eye size={17} color="#94a3b8" />
+                                }
                             </button>
                         </div>
                     </div>
@@ -169,34 +175,34 @@ function Login() {
                         type="submit"
                         style={{
                             ...S.submitBtn,
-                            opacity: loading || isLocked ? 0.6 : 1,
-                            cursor: loading || isLocked ? 'not-allowed' : 'pointer',
+                            ...(!canSubmit ? S.submitBtnDisabled : {}),
                         }}
-                        disabled={loading || isLocked}
+                        disabled={!canSubmit}
                     >
                         {loading ? (
-                            <span style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center' }}>
-                                <span style={S.spinner} /> Memverifikasi...
-                            </span>
+                            <><span style={S.spinner} /> Memverifikasi...</>
                         ) : isLocked ? (
-                            `🔒 Tunggu ${lockSeconds}s`
+                            <><ShieldAlert size={17} /> Dikunci {lockSeconds}s</>
                         ) : (
-                            'Masuk →'
+                            <><LogIn size={17} /> Masuk</>
                         )}
                     </button>
-                </form>
 
-                {/* Back to tracking */}
-                <div style={S.footer}>
-                    <a href="/" style={S.backLink}>← Kembali ke halaman tracking</a>
-                </div>
+                </form>
             </div>
 
             <style>{`
-                @keyframes spin { to { transform: rotate(360deg); } }
-                @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-                input:focus { border-color: #04CDCD !important; box-shadow: 0 0 0 3px rgba(4,205,205,0.15) !important; outline: none; }
-                input:disabled { background: #f8fafc; color: #94a3b8; }
+                @keyframes loginSpin { to { transform: rotate(360deg); } }
+                @keyframes loginUp {
+                    from { opacity: 0; transform: translateY(16px); }
+                    to   { opacity: 1; transform: translateY(0); }
+                }
+                .login-inputbox:focus-within {
+                    border-color: #04CDCD !important;
+                    box-shadow: 0 0 0 3px rgba(4,205,205,0.15) !important;
+                }
+                #email, #password { outline: none; }
+                input:disabled { color: #94a3b8 !important; }
             `}</style>
         </div>
     );
@@ -206,200 +212,196 @@ const S = {
     page: {
         minHeight: '100vh',
         display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: '#f0fefe',
-        padding: '20px',
-        fontFamily: "'Inter', 'Plus Jakarta Sans', sans-serif",
-        position: 'relative',
-        overflow: 'hidden',
-    },
-
-    // Background decorations
-    bgDeco1: {
-        position: 'fixed',
-        top: -120,
-        right: -120,
-        width: 360,
-        height: 360,
-        borderRadius: '50%',
-        background: 'radial-gradient(circle, rgba(4,205,205,0.12) 0%, transparent 70%)',
-        pointerEvents: 'none',
-    },
-    bgDeco2: {
-        position: 'fixed',
-        bottom: -80,
-        left: -80,
-        width: 280,
-        height: 280,
-        borderRadius: '50%',
-        background: 'radial-gradient(circle, rgba(4,205,205,0.08) 0%, transparent 70%)',
-        pointerEvents: 'none',
-    },
-
-    // Card
-    card: {
-        width: '100%',
-        maxWidth: 360,
-        backgroundColor: '#fff',
-        borderRadius: 24,
-        padding: '32px 28px 24px',
-        boxShadow: '0 8px 40px rgba(4,205,205,0.12), 0 2px 8px rgba(0,0,0,0.06)',
-        position: 'relative',
-        animation: 'fadeIn 0.3s ease-out',
-    },
-
-    // Logo
-    logoWrap: {
-        display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
+        justifyContent: 'center',
+        background: 'linear-gradient(160deg, #edfafa 0%, #f0fefe 50%, #f8fafc 100%)',
+        fontFamily: "'Inter', 'Plus Jakarta Sans', sans-serif",
+        padding: '24px 16px',
+        position: 'relative',
+    },
+
+    backLink: {
+        position: 'absolute',
+        top: 20,
+        left: 20,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 3,
+        fontSize: 13,
+        fontWeight: 600,
+        color: '#94a3b8',
+        textDecoration: 'none',
+    },
+
+    card: {
+        width: '100%',
+        maxWidth: 400,
+        background: '#fff',
+        borderRadius: 24,
+        padding: '36px 32px 32px',
+        boxShadow: '0 2px 4px rgba(15,23,42,0.04), 0 8px 32px rgba(15,23,42,0.08)',
+        border: '1px solid #f1f5f9',
+        animation: 'loginUp 0.3s cubic-bezier(0.22,1,0.36,1) both',
+    },
+
+    logoRow: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 9,
         marginBottom: 28,
     },
     logoIcon: {
-        fontSize: 40,
-        marginBottom: 8,
-        background: '#e0fafa',
-        borderRadius: 16,
-        padding: '8px 14px',
-    },
-    logoText: {
-        fontSize: 22,
-        fontWeight: 800,
-        color: '#04CDCD',
-        letterSpacing: '-0.5px',
-    },
-    logoSub: {
-        fontSize: 12,
-        color: '#94a3b8',
-        marginTop: 2,
-        fontWeight: 500,
-        textTransform: 'uppercase',
-        letterSpacing: '1px',
-    },
-
-    // Form
-    form: {
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 16,
-    },
-
-    // Error / lock banners
-    errorBanner: {
+        width: 36,
+        height: 36,
+        borderRadius: 10,
+        background: 'rgba(4,205,205,0.12)',
         display: 'flex',
         alignItems: 'center',
-        gap: 8,
-        padding: '10px 14px',
+        justifyContent: 'center',
+    },
+    logoName: {
+        fontSize: 16,
+        fontWeight: 800,
+        color: '#0f172a',
+        letterSpacing: '-0.3px',
+    },
+
+    heading: {
+        marginBottom: 24,
+    },
+    title: {
+        fontSize: 26,
+        fontWeight: 900,
+        color: '#0f172a',
+        letterSpacing: '-0.5px',
+        marginBottom: 5,
+        lineHeight: 1.1,
+    },
+    subtitle: {
+        fontSize: 13,
+        color: '#94a3b8',
+        fontWeight: 400,
+    },
+
+    errorBanner: {
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 10,
+        padding: '12px 14px',
         background: '#fef2f2',
         border: '1px solid #fecaca',
-        borderRadius: 10,
+        borderRadius: 12,
         fontSize: 13,
         color: '#dc2626',
         fontWeight: 500,
-        animation: 'fadeIn 0.2s ease-out',
+        marginBottom: 20,
+        lineHeight: 1.5,
     },
     lockBanner: {
         display: 'flex',
-        alignItems: 'center',
-        gap: 12,
+        alignItems: 'flex-start',
+        gap: 10,
         padding: '12px 14px',
         background: '#fff7ed',
         border: '1px solid #fed7aa',
-        borderRadius: 10,
+        borderRadius: 12,
+        fontSize: 13,
         color: '#c2410c',
-        animation: 'fadeIn 0.2s ease-out',
+        fontWeight: 500,
+        marginBottom: 20,
+        lineHeight: 1.5,
     },
 
-    // Fields
-    fieldWrap: {
+    form: {
         display: 'flex',
         flexDirection: 'column',
-        gap: 6,
+        gap: 18,
+    },
+
+    fieldGroup: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 7,
     },
     label: {
-        fontSize: 12,
+        fontSize: 13,
         fontWeight: 700,
-        color: '#475569',
-        textTransform: 'uppercase',
-        letterSpacing: '0.5px',
+        color: '#374151',
     },
-    inputWrap: {
+    inputBox: {
         position: 'relative',
+        display: 'flex',
+        alignItems: 'center',
+        border: '1.5px solid #e2e8f0',
+        borderRadius: 12,
+        background: '#fff',
+        transition: 'border-color 0.15s, box-shadow 0.15s',
     },
     inputIcon: {
         position: 'absolute',
-        left: 12,
-        top: '50%',
-        transform: 'translateY(-50%)',
-        fontSize: 15,
+        left: 14,
         pointerEvents: 'none',
+        flexShrink: 0,
     },
     input: {
-        width: '100%',
-        padding: '12px 14px 12px 40px',
-        borderRadius: 10,
-        border: '1.5px solid #e2e8f0',
-        fontSize: 14,
+        flex: 1,
+        padding: '14px 14px 14px 46px',
+        border: 'none',
+        background: 'transparent',
+        fontSize: 15,
         fontFamily: 'inherit',
-        color: '#1e293b',
+        color: '#0f172a',
+        borderRadius: 12,
+        width: '100%',
         boxSizing: 'border-box',
-        transition: 'border-color 0.2s, box-shadow 0.2s',
-        background: '#fff',
     },
     eyeBtn: {
         position: 'absolute',
-        right: 10,
-        top: '50%',
-        transform: 'translateY(-50%)',
+        right: 12,
         background: 'none',
         border: 'none',
         cursor: 'pointer',
-        fontSize: 16,
-        padding: 4,
-        borderRadius: 6,
-        lineHeight: 1,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 6,
+        borderRadius: 8,
     },
 
-    // Submit button
     submitBtn: {
-        padding: '14px',
-        borderRadius: 12,
+        marginTop: 4,
+        width: '100%',
+        padding: '15px',
+        borderRadius: 14,
         border: 'none',
-        background: 'linear-gradient(135deg, #04CDCD, #028585)',
+        background: '#04CDCD',
         color: '#fff',
         fontWeight: 800,
         fontSize: 15,
         fontFamily: 'inherit',
-        marginTop: 4,
-        transition: 'all 0.2s',
-        boxShadow: '0 4px 16px rgba(4,205,205,0.3)',
-        letterSpacing: '0.2px',
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        boxShadow: '0 4px 20px rgba(4,205,205,0.3)',
+        transition: 'opacity 0.15s',
+        letterSpacing: '0.1px',
+    },
+    submitBtnDisabled: {
+        opacity: 0.35,
+        cursor: 'not-allowed',
+        boxShadow: 'none',
     },
 
     spinner: {
         display: 'inline-block',
         width: 16,
         height: 16,
-        border: '2px solid rgba(255,255,255,0.3)',
-        borderTop: '2px solid #fff',
+        border: '2px solid rgba(255,255,255,0.35)',
+        borderTopColor: '#fff',
         borderRadius: '50%',
-        animation: 'spin 0.7s linear infinite',
-    },
-
-    // Footer
-    footer: {
-        textAlign: 'center',
-        marginTop: 20,
-        paddingTop: 16,
-        borderTop: '1px solid #f1f5f9',
-    },
-    backLink: {
-        fontSize: 12,
-        color: '#94a3b8',
-        textDecoration: 'none',
-        fontWeight: 500,
+        animation: 'loginSpin 0.7s linear infinite',
     },
 };
-
-export default Login;

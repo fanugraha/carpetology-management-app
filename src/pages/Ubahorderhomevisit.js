@@ -3,6 +3,11 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { db } from '../firebase';
 import { doc, onSnapshot, updateDoc} from 'firebase/firestore';
 import './Ubahorderhomevisit.css';
+import {
+    User, Phone, MapPin, AlignLeft, ArrowLeft,
+    CheckCircle, AlertTriangle, Sun, Cloud,
+    Loader2,
+} from 'lucide-react';
 
 const BULAN_FULL = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
     'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
@@ -75,7 +80,6 @@ export default function UbahOrderHomeVisit() {
             if (snap.exists()) {
                 const data = { id: snap.id, ...snap.data() };
                 setOriginal(data);
-                // Hanya set formData sekali (saat pertama load)
                 setFormData(prev => prev ?? {
                     nama: data.nama || '',
                     no_hp: data.no_hp || '',
@@ -134,10 +138,7 @@ export default function UbahOrderHomeVisit() {
                 updated_at: new Date(),
             });
             setSuccess(true);
-
-            // UBAH BAGIAN INI:
             setTimeout(() => navigate('/admin/jadwal-home-visit'), 1800);
-
         } catch (err) {
             console.error(err);
             alert('Gagal menyimpan perubahan.');
@@ -145,7 +146,6 @@ export default function UbahOrderHomeVisit() {
             setSaving(false);
         }
     }
-
 
     // ── Loading ──
     if (loading || !formData) return (
@@ -160,7 +160,10 @@ export default function UbahOrderHomeVisit() {
 
             {/* ── Header ── */}
             <div className="uohv-header">
-                <button className="uohv-header__back" onClick={() => navigate(-1)}>← Kembali</button>
+                <button className="uohv-header__back" onClick={() => navigate(-1)}>
+                    <ArrowLeft size={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />
+                    Kembali
+                </button>
                 <p className="uohv-header__eyebrow">Home Visit · Edit</p>
                 <h1 className="uohv-header__title">Ubah Data Booking</h1>
                 <p className="uohv-header__sub">{original?.nama}</p>
@@ -171,7 +174,9 @@ export default function UbahOrderHomeVisit() {
                 {/* ── Diff preview ── */}
                 {hasChanges && (
                     <div className="uohv-diff">
-                        <p className="uohv-diff__title">⚠️ Perubahan belum disimpan</p>
+                        <p className="uohv-diff__title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <AlertTriangle size={14} /> Perubahan belum disimpan
+                        </p>
                         {changedFields.map(k => (
                             <div key={k} className="uohv-diff__row">
                                 <span className="uohv-diff__key">{fieldLabel[k]}</span>
@@ -196,13 +201,13 @@ export default function UbahOrderHomeVisit() {
                     <div className="uohv-card__body">
                         <FloatInput
                             label="Nama Customer"
-                            icon="👤"
+                            icon={<User size={16} />}
                             value={formData.nama}
                             onChange={e => set('nama', e.target.value)}
                         />
                         <FloatInput
                             label="Nomor WhatsApp"
-                            icon="📱"
+                            icon={<Phone size={16} />}
                             type="tel"
                             value={formData.no_hp}
                             onChange={e => set('no_hp', e.target.value)}
@@ -238,8 +243,8 @@ export default function UbahOrderHomeVisit() {
                             <p className="uohv-section-label">Sesi</p>
                             <div className="uohv-sesi-grid">
                                 {[
-                                    { val: 1, emoji: '🌅', label: 'Sesi 1', time: '09:00 – 11:00', disabled: isSesi1Disabled() },
-                                    { val: 2, emoji: '🌤️', label: 'Sesi 2', time: '13:00 – 15:00', disabled: false },
+                                    { val: 1, icon: <Sun size={18} />, label: 'Sesi 1', time: '09:00 – 11:00', disabled: isSesi1Disabled() },
+                                    { val: 2, icon: <Cloud size={18} />, label: 'Sesi 2', time: '13:00 – 15:00', disabled: false },
                                 ].map(s => (
                                     <div
                                         key={s.val}
@@ -250,11 +255,13 @@ export default function UbahOrderHomeVisit() {
                                         ].filter(Boolean).join(' ')}
                                         onClick={() => !s.disabled && set('sesi', s.val)}
                                     >
-                                        <span className="uohv-sesi-card__emoji">{s.emoji}</span>
+                                        <span className="uohv-sesi-card__emoji">{s.icon}</span>
                                         <span className="uohv-sesi-card__name">{s.label}</span>
                                         <span className="uohv-sesi-card__time">{s.time}</span>
                                         {formData.sesi === s.val && (
-                                            <span className="uohv-sesi-card__check">✓</span>
+                                            <span className="uohv-sesi-card__check">
+                                                <CheckCircle size={14} />
+                                            </span>
                                         )}
                                     </div>
                                 ))}
@@ -277,7 +284,7 @@ export default function UbahOrderHomeVisit() {
                     <div className="uohv-card__body">
                         <FloatInput
                             label="Link Google Maps"
-                            icon="📍"
+                            icon={<MapPin size={16} />}
                             type="url"
                             value={formData.maps_lokasi}
                             onChange={e => set('maps_lokasi', e.target.value)}
@@ -304,16 +311,17 @@ export default function UbahOrderHomeVisit() {
                 >
                     {saving ? (
                         <>
-                            <span style={{
-                                width: 14, height: 14, border: '2px solid rgba(255,255,255,0.3)',
-                                borderTopColor: '#fff', borderRadius: '50%',
-                                animation: 'uohvSpin 0.7s linear infinite',
-                                display: 'inline-block',
-                            }} />
+                            <Loader2
+                                size={14}
+                                style={{ animation: 'uohvSpin 0.7s linear infinite', display: 'inline-block' }}
+                            />
                             Menyimpan...
                         </>
                     ) : (
-                        `✅ Simpan${hasChanges ? ` (${changedFields.length})` : ''}`
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <CheckCircle size={15} />
+                            Simpan{hasChanges ? ` (${changedFields.length})` : ''}
+                        </span>
                     )}
                 </button>
             </div>
@@ -322,7 +330,9 @@ export default function UbahOrderHomeVisit() {
             {success && (
                 <div className="uohv-success-overlay">
                     <div className="uohv-success-box">
-                        <div className="uohv-success-box__icon">✅</div>
+                        <div className="uohv-success-box__icon">
+                            <CheckCircle size={40} color="#22c55e" />
+                        </div>
                         <h2 className="uohv-success-box__title">Berhasil Disimpan!</h2>
                         <p className="uohv-success-box__sub">Data booking telah diperbarui</p>
                     </div>

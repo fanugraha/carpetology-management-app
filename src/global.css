@@ -1,7 +1,4 @@
-/* ─── global.css ─────────────────────────────────────────────────────────────
-   Paksa SEMUA halaman tampil flat mobile seperti halaman Kasir.
-   Import file ini SEKALI di index.css atau App.jsx / main.jsx.
-   ─────────────────────────────────────────────────────────────────────────── */
+/* ─── global.css ─────────────────────────────────────────────────────────── */
 
 * {
   box-sizing: border-box;
@@ -11,24 +8,42 @@
 
 html, body, #root {
   height: 100%;
-  background: #e2e8f0; /* abu-abu di luar container supaya kelihatan jelas */
+  background: #e2e8f0;
   font-family: 'DM Sans', 'Nunito', 'Plus Jakarta Sans', sans-serif;
 }
 
-/* ── Container utama: semua halaman dibungkus di sini ── */
 #root {
   display: flex;
   justify-content: center;
   align-items: flex-start;
 }
 
-/* ── Setiap halaman/page yang jadi direct child #root ── */
 #root > * {
   width: 100%;
-  max-width: 480px;         /* sama dengan kasir */
+  max-width: 480px;
   min-height: 100vh;
   background: #fff;
   position: relative;
   box-shadow: 0 0 40px rgba(4, 205, 205, 0.08);
   overflow-x: hidden;
+}
+
+/* ── Fixed elements (FAB, Navbar fixed, bottom bar) harus ikut max-width ── */
+.fixed-bottom-bar {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 480px;
+  z-index: 10;
+}
+
+.fixed-fab {
+  position: fixed;
+  bottom: 74px;
+  /* Kanan FAB = kanan container, bukan kanan viewport */
+  /* Gunakan calc agar tetap 20px dari sisi kanan container */
+  right: max(20px, calc(50vw - 480px/2 + 20px));
+  z-index: 20;
 }

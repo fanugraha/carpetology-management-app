@@ -12,13 +12,26 @@ import UbahOrderHomeVisit from './pages/Ubahorderhomevisit';
 import ProductPage from './pages/ProductPage';
 import DetailProduk from './pages/DetailProduk';
 import KasirPage from './pages/kasir-system/KasirPage';
+import NotaPublicPage from './pages/NotaPublicPage';
 import './global.css';
+import './index.css';
 
+const AdminRoute = ({ children }) => {
+    const { user } = useAuth();
+    if (!user) return <Navigate to="/admin-login" />;
+    if (user.role !== 'admin') return <Navigate to="/admin" />;
+    return children;
+};
+
+const StaffRoute = ({ children }) => {
+    const { user } = useAuth();
+    if (!user) return <Navigate to="/admin-login" />;
+    return children;
+};
 
 function App() {
-    const { user, loading } = useAuth(); // ← tambah loading
+    const { user, loading } = useAuth();
 
-    // Jangan render apapun sampai auth selesai check
     if (loading) return (
         <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#04CDCD' }}>
             Memuat sistem...
@@ -29,34 +42,43 @@ function App() {
         <div className="app-container">
             <Router>
                 <Routes>
-                    {/* Public routes */}
+                    {/* ── Public routes ── */}
                     <Route path="/" element={<TrackingPage />} />
+                    <Route path="/nota/:notaId" element={<NotaPublicPage />} />
                     <Route path="/jadwal" element={<BookingHomeVisit bookings={[]} />} />
-                    <Route path="/tambah-booking" element={<AdminBookingForm />} />
-                    <Route path="/tambah-produk" element={<DetailProduk />} />
-                    <Route path="/produk/:id" element={<DetailProduk />} />
                     <Route path="/admin-login" element={
-                        user ? <Navigate to="/admin" /> : <Login />  // ← kalau sudah login, skip login page
+                        user ? <Navigate to="/admin" /> : <Login />
                     } />
 
-                    {/* Admin routes — semua wajib login */}
+                    {/* ── Admin only ── */}
                     <Route path="/admin/kasir" element={
-                        user ? <KasirPage /> : <Navigate to="/admin-login" />
+                        <AdminRoute><KasirPage /></AdminRoute>
                     } />
                     <Route path="/admin/products" element={
-                        user ? <ProductPage /> : <Navigate to="/admin-login" />
+                        <AdminRoute><ProductPage /></AdminRoute>
+                    } />
+                    <Route path="/admin/tambah-produk" element={
+                        <AdminRoute><DetailProduk /></AdminRoute>
+                    } />
+                    <Route path="/admin/produk/:id" element={
+                        <AdminRoute><DetailProduk /></AdminRoute>
+                    } />
+
+                    {/* ── Admin + Staff ── */}
+                    <Route path="/admin/tambah-booking" element={
+                        <StaffRoute><AdminBookingForm /></StaffRoute>
                     } />
                     <Route path="/admin/jadwal-home-visit" element={
-                        user ? <JadwalHomeVisit /> : <Navigate to="/admin-login" />
+                        <StaffRoute><JadwalHomeVisit /></StaffRoute>
                     } />
                     <Route path="/admin/home-visit/:id" element={
-                        user ? <DetailOrderHomeVisit /> : <Navigate to="/admin-login" />
+                        <StaffRoute><DetailOrderHomeVisit /></StaffRoute>
                     } />
                     <Route path="/admin/home-visit/:id/ubah" element={
-                        user ? <UbahOrderHomeVisit /> : <Navigate to="/admin-login" />
+                        <StaffRoute><UbahOrderHomeVisit /></StaffRoute>
                     } />
                     <Route path="/admin/*" element={
-                        user ? <DashboardWrapper /> : <Navigate to="/admin-login" />
+                        <StaffRoute><DashboardWrapper /></StaffRoute>
                     } />
                 </Routes>
             </Router>
