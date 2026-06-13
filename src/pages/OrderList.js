@@ -8,18 +8,20 @@ import { useNavigate } from 'react-router-dom';
 import { collection, onSnapshot, doc, getDoc } from 'firebase/firestore';
 import {
     Search, X, Home, Flame, CheckCircle, Clock, Plus,
-    Layers, AlarmClock, LayoutList, LogOut,
+    Layers, AlarmClock, LayoutList, LogOut, Bell,
 } from 'lucide-react';
 
 function OrderList({ searchQuery, setSearchQuery, activeFilter, setActiveFilter, onOrderClick }) {
     const { user } = useAuth();
     const [sortBy, setSortBy] = useState('urgent');
     const [transactions, setTransactions] = useState([]);
+    const [bookings, setBookings] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const navigate = useNavigate();
 
     const customerCache = React.useRef({});
 
+    // ── Helpers ──
     const getReadyTimestamp = (order) => {
         const ts = order.ready_at || order.created_at;
         if (!ts) return null;
@@ -41,6 +43,27 @@ function OrderList({ searchQuery, setSearchQuery, activeFilter, setActiveFilter,
         return Math.max(0, Math.ceil(7 - selisihHari));
     };
 
+    const hitungHariKerja = (tglStr) => {
+        if (!tglStr || typeof tglStr !== 'string') return 0;
+        const bulanIndo = {
+            'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'Mei': 4, 'Jun': 5,
+            'Jul': 6, 'Ags': 7, 'Sep': 8, 'Okt': 9, 'Nov': 10, 'Des': 11
+        };
+        const parts = tglStr.split(' ');
+        if (parts.length < 3) return 0;
+        const tglMasuk = new Date(parts[2], bulanIndo[parts[1]], parseInt(parts[0]));
+        tglMasuk.setHours(0, 0, 0, 0);
+        const hariIni = new Date();
+        hariIni.setHours(0, 0, 0, 0);
+        let hariKerja = 0;
+        let cursor = new Date(tglMasuk);
+        while (cursor <= hariIni) {
+            if (cursor.getDay() !== 0) hariKerja++;
+            cursor.setDate(cursor.getDate() + 1);
+        }
+        return hariKerja;
+    };
+
     const fetchCustomer = async (customerRef) => {
         if (!customerRef) return { nama: '-', no_hp: '-' };
         const refPath = typeof customerRef === 'string' ? customerRef : customerRef.path;
@@ -59,6 +82,7 @@ function OrderList({ searchQuery, setSearchQuery, activeFilter, setActiveFilter,
         }
     };
 
+    // ── Data fetching ──
     useEffect(() => {
         setIsLoading(true);
         const unsub = onSnapshot(collection(db, 'transactions'), async (snapshot) => {
@@ -96,29 +120,17 @@ function OrderList({ searchQuery, setSearchQuery, activeFilter, setActiveFilter,
         return () => unsub();
     }, []);
 
-    const hitungHariKerja = (tglStr) => {
-        if (!tglStr || typeof tglStr !== 'string') return 0;
-        const bulanIndo = {
-            'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'Mei': 4, 'Jun': 5,
-            'Jul': 6, 'Ags': 7, 'Sep': 8, 'Okt': 9, 'Nov': 10, 'Des': 11
-        };
-        const parts = tglStr.split(' ');
-        if (parts.length < 3) return 0;
-        const tglMasuk = new Date(parts[2], bulanIndo[parts[1]], parseInt(parts[0]));
-        tglMasuk.setHours(0, 0, 0, 0);
-        const hariIni = new Date();
-        hariIni.setHours(0, 0, 0, 0);
-        let hariKerja = 0;
-        let cursor = new Date(tglMasuk);
-        while (cursor <= hariIni) {
-            if (cursor.getDay() !== 0) hariKerja++;
-            cursor.setDate(cursor.getDate() + 1);
-        }
-        return hariKerja;
-    };
+    useEffect(() => {
+        const unsub = onSnapshot(collection(db, 'bookings'), (snapshot) => {
+            const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+            setBookings(data);
+        });
+        return () => unsub();
+    }, []);
 
+    // ── Derived data ──
     const visibleTransactions = transactions.filter(
-        o => !o.is_hidden && !isAutoHidden(o) && o.layanan_type !== "home_visit"
+        o => !o.is_hidden && !isAutoHidden(o) && o.layanan_type !== 'home_visit'
     );
 
     const getCount = (status) =>
@@ -152,6 +164,88 @@ function OrderList({ searchQuery, setSearchQuery, activeFilter, setActiveFilter,
 
     const isAdmin = user?.role === 'admin' || user?.role === 'Admin';
 
+    // ── Reminder WA ──
+    const generateReminderText = () => {
+        const now = new Date();
+        const namaHari = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+        const namaBulan = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Ags', 'Sep', 'Okt', 'Nov', 'Des'];
+        const tglStr = `${namaHari[now.getDay()]}, ${now.getDate()} ${namaBulan[now.getMonth()]} ${now.getFullYear()}`;
+
+        // ── Home visit hari ini ──
+        const hariIniStr = [
+            now.getFullYear(),
+            String(now.getMonth() + 1).padStart(2, '0'),
+            String(now.getDate()).padStart(2, '0'),
+        ].join('-');
+
+        const sesiLabel = (sesi) => {
+            const num = Number(sesi);
+            return num === 1 ? 'Sesi 1 (09:00-11:00)' : 'Sesi 2 (13:00-15:00)';
+        };
+
+        const homeVisitHariIni = bookings.filter(
+            b => b.status === 'confirmed' && b.tanggal === hariIniStr
+        );
+
+        const formatHomeVisit = (b) => {
+            let baris = `- ${b.nama} — ${sesiLabel(b.sesi)}\n  ${b.no_hp || '-'}`;
+            if (b.maps_lokasi) baris += `\n  ${b.maps_lokasi}`;
+            return baris;
+        };
+
+        // ── Order cuci ──
+        const aktif = visibleTransactions.filter(o => o.status !== 'Ready Anter');
+        const lewatBatas = aktif.filter(o => hitungHariKerja(o.tanggal) > 5);
+        const mendekati = aktif.filter(o => {
+            const h = hitungHariKerja(o.tanggal);
+            return h === 4 || h === 5;
+        });
+        const waiting = aktif.filter(o => o.status === 'Waiting List');
+
+        const formatBaris = (o) => {
+            const h = hitungHariKerja(o.tanggal);
+            return `- ${o.nama} — ${o.tanggal} (hari ke-${h})\n  ${o.hp}`;
+        };
+
+        // ── Susun pesan ──
+        let pesan = `*Carpetology Daily Update*\n${tglStr}\n\n`;
+
+        // Section home visit — selalu tampil
+        pesan += `*JADWAL HOME VISIT — HARI INI*\n`;
+        if (homeVisitHariIni.length > 0) {
+            pesan += homeVisitHariIni.map(formatHomeVisit).join('\n') + '\n\n';
+        } else {
+            pesan += `Tidak ada jadwal home visit hari ini.\n\n`;
+        }
+
+        // Section order cuci
+        pesan += `*STATUS ORDER CUCI*\n`;
+        if (lewatBatas.length > 0) {
+            pesan += `\nLEWAT ESTIMASI:\n`;
+            pesan += lewatBatas.map(formatBaris).join('\n') + '\n';
+        }
+        if (mendekati.length > 0) {
+            pesan += `\nMENDEKATI BATAS (hari ke-4/5):\n`;
+            pesan += mendekati.map(formatBaris).join('\n') + '\n';
+        }
+        if (waiting.length > 0) {
+            pesan += `\nWAITING LIST — belum mulai dicuci:\n`;
+            pesan += waiting.map(o => `- ${o.nama} — ${o.tanggal}\n  ${o.hp}`).join('\n') + '\n';
+        }
+        if (lewatBatas.length === 0 && mendekati.length === 0 && waiting.length === 0) {
+            pesan += `Semua order cuci dalam kondisi aman.\n`;
+        }
+
+        pesan += `\nMohon update status di app ya.`;
+        return pesan;
+    };
+
+    const handleKirimReminder = () => {
+        const pesan = generateReminderText();
+        const encoded = encodeURIComponent(pesan);
+        window.open(`https://wa.me/?text=${encoded}`, '_blank');
+    };
+
     return (
         <div style={S.page}>
 
@@ -167,10 +261,7 @@ function OrderList({ searchQuery, setSearchQuery, activeFilter, setActiveFilter,
                             <div style={S.tagline}>Admin Dashboard</div>
                         </div>
                     </div>
-                    <button
-                        onClick={() => signOut(auth)}
-                        style={S.logoutBtn}
-                    >
+                    <button onClick={() => signOut(auth)} style={S.logoutBtn}>
                         <LogOut size={12} />
                         Logout
                     </button>
@@ -252,6 +343,18 @@ function OrderList({ searchQuery, setSearchQuery, activeFilter, setActiveFilter,
                     </div>
                     <span style={{ marginLeft: 'auto', fontSize: 18, opacity: 0.7 }}>›</span>
                 </button>
+
+                {/* ── Reminder WA ── */}
+                {isAdmin && (
+                    <button onClick={handleKirimReminder} style={S.reminderBtn}>
+                        <Bell size={16} color="#1e293b" />
+                        <div style={{ textAlign: 'left' }}>
+                            <div style={{ fontWeight: 700, fontSize: 13 }}>Kirim Reminder ke Grup WA</div>
+                            <div style={{ fontSize: 11, opacity: 0.6, marginTop: 1 }}>Generate pesan otomatis dari data order</div>
+                        </div>
+                        <span style={{ marginLeft: 'auto', fontSize: 18, opacity: 0.4 }}>›</span>
+                    </button>
+                )}
 
                 {/* ── Sort ── */}
                 <div style={S.sortRow}>
@@ -370,7 +473,6 @@ const S = {
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'flex-start',
-        marginBottom: 20,
         maxWidth: 500,
         margin: '0 auto 20px',
     },
@@ -527,8 +629,23 @@ const S = {
         borderRadius: 14,
         cursor: 'pointer',
         fontFamily: 'inherit',
-        marginBottom: 12,
+        marginBottom: 8,
         boxShadow: '0 4px 16px rgba(4,205,205,0.25)',
+        boxSizing: 'border-box',
+    },
+    reminderBtn: {
+        width: '100%',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        padding: '14px 16px',
+        background: '#fff',
+        color: '#1e293b',
+        border: '1.5px solid #e2e8f0',
+        borderRadius: 14,
+        cursor: 'pointer',
+        fontFamily: 'inherit',
+        marginBottom: 12,
         boxSizing: 'border-box',
     },
     sortRow: {

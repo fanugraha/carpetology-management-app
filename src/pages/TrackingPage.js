@@ -5,8 +5,145 @@ import { useNavigate } from 'react-router-dom';
 import {
     Search, X, Home, MessageCircle, Clock, CheckCircle,
     WashingMachine, Layers, CalendarDays, Timer, Package,
-    FileText, ClipboardList, Settings,
+    FileText, ClipboardList, Settings, ChevronDown, ChevronUp,
 } from 'lucide-react';
+
+function OrderCard({ order, statusCfg, est, waLink, STEPS }) {
+    const [expanded, setExpanded] = useState(false);
+
+    return (
+        <div style={S.card}>
+            {/* ── Collapsed summary — selalu tampil ── */}
+            <div style={S.cardTop}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={S.custName}>{order.nama}</div>
+                    {/* Estimasi ringkas */}
+                    <div style={S.estRow}>
+                        <Timer size={10} color="#94a3b8" />
+                        <span style={{ color: '#94a3b8', fontSize: 11 }}>Estimasi:</span>
+                        <span style={{ color: '#1e293b', fontSize: 11, fontWeight: 700 }}>{est.tgl}</span>
+                        <span style={{
+                            fontSize: 10,
+                            color: order.status === 'Ready Anter' ? '#15803d' : '#64748b',
+                            fontWeight: 600,
+                        }}>
+                            ({est.info})
+                        </span>
+                    </div>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
+                    <div style={{
+                        ...S.statusBadge,
+                        background: statusCfg.bg,
+                        color: statusCfg.text,
+                        border: `1px solid ${statusCfg.border}`,
+                    }}>
+                        {statusCfg.icon} {statusCfg.label}
+                    </div>
+                    <button
+                        onClick={() => setExpanded(e => !e)}
+                        style={S.expandBtn}
+                    >
+                        {expanded
+                            ? <><ChevronUp size={11} /> Tutup</>
+                            : <><ChevronDown size={11} /> Detail</>
+                        }
+                    </button>
+                </div>
+            </div>
+
+            {/* ── Detail — hanya saat expanded ── */}
+            {expanded && (
+                <>
+                    {/* Progress steps */}
+                    <div style={S.stepsWrap}>
+                        {STEPS.map((step, i) => {
+                            const stepNum = i + 1;
+                            const isDone = statusCfg.step > stepNum;
+                            const isActive = statusCfg.step === stepNum;
+                            return (
+                                <React.Fragment key={i}>
+                                    <div style={S.stepItem}>
+                                        <div style={{
+                                            ...S.stepDot,
+                                            background: isDone || isActive ? statusCfg.dotColor : '#e2e8f0',
+                                            boxShadow: isActive ? `0 0 0 3px ${statusCfg.dotColor}33` : 'none',
+                                        }}>
+                                            {isDone
+                                                ? <CheckCircle size={12} color="#fff" />
+                                                : <span style={{ fontSize: 10, fontWeight: 700, color: '#fff' }}>{stepNum}</span>
+                                            }
+                                        </div>
+                                        <div style={{
+                                            ...S.stepLabel,
+                                            color: isDone || isActive ? statusCfg.text : '#94a3b8',
+                                            fontWeight: isActive ? 700 : 500,
+                                        }}>
+                                            {step}
+                                        </div>
+                                    </div>
+                                    {i < STEPS.length - 1 && (
+                                        <div style={{
+                                            ...S.stepLine,
+                                            background: isDone ? statusCfg.dotColor : '#e2e8f0',
+                                        }} />
+                                    )}
+                                </React.Fragment>
+                            );
+                        })}
+                    </div>
+
+                    {/* Info grid */}
+                    <div style={S.infoGrid}>
+                        <div style={S.infoCell}>
+                            <div style={S.infoLabel}>
+                                <CalendarDays size={9} /> Tgl Masuk
+                            </div>
+                            <div style={S.infoVal}>{order.tanggal || '-'}</div>
+                        </div>
+                        <div style={S.infoCell}>
+                            <div style={S.infoLabel}>
+                                <Timer size={9} /> Estimasi Selesai
+                            </div>
+                            <div style={{ ...S.infoVal, color: order.status === 'Ready Anter' ? '#15803d' : '#1e293b' }}>
+                                {est.tgl} <span style={{ color: '#64748b', fontWeight: 500 }}>({est.info})</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Items */}
+                    {order.items.length > 0 && (
+                        <div style={S.itemsWrap}>
+                            <Package size={12} style={{ flexShrink: 0, marginTop: 1 }} />
+                            <span>
+                                {order.items.map((it, i) => (
+                                    <span key={i}>
+                                        {i > 0 && ', '}
+                                        {it.qty}× {it.nama}
+                                        {it.satuan === 'meter' && it.luas ? ` (${Number(it.luas).toFixed(1)}m²)` : ''}
+                                    </span>
+                                ))}
+                            </span>
+                        </div>
+                    )}
+
+                    {/* Catatan */}
+                    {order.catatan && (
+                        <div style={S.noteBox}>
+                            <FileText size={12} style={{ flexShrink: 0, marginTop: 1 }} />
+                            <span>{order.catatan}</span>
+                        </div>
+                    )}
+
+                    {/* CTA */}
+                    <a href={waLink} target="_blank" rel="noreferrer" style={S.waBtn}>
+                        <MessageCircle size={14} /> Tanya Progres Order
+                    </a>
+                </>
+            )}
+        </div>
+    );
+}
 
 function TrackingPage() {
     const [orders, setOrders] = useState([]);
@@ -272,108 +409,18 @@ function TrackingPage() {
                         {filteredOrders.map((order) => {
                             const statusCfg = getStatusConfig(order.status);
                             const est = getEstimasiInfo(order.tanggal, order.status);
+                            // notaId tetap ada di link WA tapi tidak ditampilkan di card
                             const waLink = `https://wa.me/6282151154727?text=Halo Admin, saya ingin menanyakan progres order:%0ANama: ${encodeURIComponent(order.nama)}%0ATanggal Masuk: ${order.tanggal}%0ANota: ${order.notaId}`;
 
                             return (
-                                <div key={order.id} style={S.card}>
-                                    {/* Card header */}
-                                    <div style={S.cardTop}>
-                                        <div style={{ flex: 1, minWidth: 0 }}>
-                                            <div style={S.custName}>{order.nama}</div>
-                                            <div style={S.notaId}>#{order.notaId}</div>
-                                        </div>
-                                        <div style={{
-                                            ...S.statusBadge,
-                                            background: statusCfg.bg,
-                                            color: statusCfg.text,
-                                            border: `1px solid ${statusCfg.border}`,
-                                        }}>
-                                            {statusCfg.icon} {statusCfg.label}
-                                        </div>
-                                    </div>
-
-                                    {/* Progress steps */}
-                                    <div style={S.stepsWrap}>
-                                        {STEPS.map((step, i) => {
-                                            const stepNum = i + 1;
-                                            const isDone = statusCfg.step > stepNum;
-                                            const isActive = statusCfg.step === stepNum;
-                                            return (
-                                                <React.Fragment key={i}>
-                                                    <div style={S.stepItem}>
-                                                        <div style={{
-                                                            ...S.stepDot,
-                                                            background: isDone || isActive ? statusCfg.dotColor : '#e2e8f0',
-                                                            boxShadow: isActive ? `0 0 0 3px ${statusCfg.dotColor}33` : 'none',
-                                                        }}>
-                                                            {isDone ? <CheckCircle size={12} color="#fff" /> : <span style={{ fontSize: 10, fontWeight: 700, color: '#fff' }}>{stepNum}</span>}
-                                                        </div>
-                                                        <div style={{
-                                                            ...S.stepLabel,
-                                                            color: isDone || isActive ? statusCfg.text : '#94a3b8',
-                                                            fontWeight: isActive ? 700 : 500,
-                                                        }}>
-                                                            {step}
-                                                        </div>
-                                                    </div>
-                                                    {i < STEPS.length - 1 && (
-                                                        <div style={{
-                                                            ...S.stepLine,
-                                                            background: isDone ? statusCfg.dotColor : '#e2e8f0',
-                                                        }} />
-                                                    )}
-                                                </React.Fragment>
-                                            );
-                                        })}
-                                    </div>
-
-                                    {/* Info rows */}
-                                    <div style={S.infoGrid}>
-                                        <div style={S.infoCell}>
-                                            <div style={S.infoLabel}>
-                                                <CalendarDays size={9} /> Tgl Masuk
-                                            </div>
-                                            <div style={S.infoVal}>{order.tanggal || '-'}</div>
-                                        </div>
-                                        <div style={S.infoCell}>
-                                            <div style={S.infoLabel}>
-                                                <Timer size={9} /> Estimasi Selesai
-                                            </div>
-                                            <div style={{ ...S.infoVal, color: order.status === 'Ready Anter' ? '#15803d' : '#1e293b' }}>
-                                                {est.tgl} <span style={{ color: '#64748b', fontWeight: 500 }}>({est.info})</span>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* Items ringkasan */}
-                                    {order.items.length > 0 && (
-                                        <div style={S.itemsWrap}>
-                                            <Package size={12} style={{ flexShrink: 0, marginTop: 1 }} />
-                                            <span>
-                                                {order.items.map((it, i) => (
-                                                    <span key={i}>
-                                                        {i > 0 && ', '}
-                                                        {it.qty}× {it.nama}
-                                                        {it.satuan === 'meter' && it.luas ? ` (${Number(it.luas).toFixed(1)}m²)` : ''}
-                                                    </span>
-                                                ))}
-                                            </span>
-                                        </div>
-                                    )}
-
-                                    {/* Catatan */}
-                                    {order.catatan && (
-                                        <div style={S.noteBox}>
-                                            <FileText size={12} style={{ flexShrink: 0, marginTop: 1 }} />
-                                            <span>{order.catatan}</span>
-                                        </div>
-                                    )}
-
-                                    {/* CTA */}
-                                    <a href={waLink} target="_blank" rel="noreferrer" style={S.waBtn}>
-                                        <MessageCircle size={14} /> Tanya Progres Order
-                                    </a>
-                                </div>
+                                <OrderCard
+                                    key={order.id}
+                                    order={order}
+                                    statusCfg={statusCfg}
+                                    est={est}
+                                    waLink={waLink}
+                                    STEPS={STEPS}
+                                />
                             );
                         })}
                     </div>
@@ -593,10 +640,11 @@ const S = {
         transition: 'all 0.15s',
         flexShrink: 0,
     },
+    // ── Card styles ──
     card: {
         background: '#fff',
         borderRadius: 16,
-        padding: '16px',
+        padding: '14px 16px',
         boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
         border: '1px solid #f1f5f9',
     },
@@ -604,19 +652,19 @@ const S = {
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'flex-start',
-        marginBottom: 14,
         gap: 10,
     },
     custName: {
         fontSize: 15,
         fontWeight: 800,
         color: '#1e293b',
-        marginBottom: 2,
+        marginBottom: 4,
     },
-    notaId: {
-        fontSize: 10,
-        color: '#94a3b8',
-        fontFamily: 'monospace',
+    estRow: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 4,
+        flexWrap: 'wrap',
     },
     statusBadge: {
         display: 'flex',
@@ -629,9 +677,25 @@ const S = {
         flexShrink: 0,
         whiteSpace: 'nowrap',
     },
+    expandBtn: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 4,
+        background: '#f8fafc',
+        border: '1px solid #e2e8f0',
+        color: '#64748b',
+        padding: '4px 10px',
+        borderRadius: 8,
+        fontSize: 11,
+        fontWeight: 600,
+        cursor: 'pointer',
+        fontFamily: 'inherit',
+        whiteSpace: 'nowrap',
+    },
     stepsWrap: {
         display: 'flex',
         alignItems: 'center',
+        marginTop: 14,
         marginBottom: 14,
         padding: '10px 0',
         borderTop: '1px solid #f8fafc',

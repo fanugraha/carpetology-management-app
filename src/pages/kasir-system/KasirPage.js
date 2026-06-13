@@ -1154,6 +1154,7 @@ function StepSukses({ order, onReset, onViewNota }) {
     const totalAkhir = subtotal - diskonAmount;
     const diskonLine = diskonAmount > 0 ? `Diskon: -${fmt(diskonAmount)}\n` : "";
     const metodeLabel = order.metode || "Tunai";
+    const trackingUrl = `${window.location.origin}/track/${order.notaId}`;
 
     // ── Pesan WA berbeda untuk Home Visit ──────────────────────────────────
     if (isHomeVisit) {
@@ -1167,7 +1168,7 @@ function StepSukses({ order, onReset, onViewNota }) {
       );
     }
 
-    // ── Pesan WA laundry biasa (sama seperti sebelumnya) ───────────────────
+    // ── Pesan WA laundry biasa ─────────────────────────────────────────────
     const adaBelumDiukur = order.items.some(it => it.satuan === "meter" && (!it.luas || it.luas === 0));
     const totalLine = adaBelumDiukur
       ? `Total sementara: *${fmt(totalAkhir)}* (menyusul setelah pengukuran)`
@@ -1178,7 +1179,9 @@ function StepSukses({ order, onReset, onViewNota }) {
       `Berikut ringkasan order Anda:\n\n${itemLines}\n\n` +
       `${totalLine}\nPembayaran: ${metodeLabel} (${statusBayar})\n\n` +
       `*Garansi & Ketentuan:*\n- Estimasi selesai 5-7 hari kerja\n- Garansi cuci ulang gratis, klaim maks. 7 hari setelah pengambilan\n- Barang yang tidak diambil >30 hari menjadi tanggung jawab pelanggan\n\n` +
-      `Cek status order: ${notaUrl}\n\nTerima kasih atas kepercayaan Anda — Carpetology`
+      `Nota digital: ${notaUrl}\n` +
+      `Pantau progres cucian: ${trackingUrl}\n\n` +
+      `Terima kasih atas kepercayaan Anda — Carpetology`
     );
   };
 
@@ -1355,12 +1358,28 @@ function StepSukses({ order, onReset, onViewNota }) {
 }
 
 // ─── EDIT NOTA MODAL ──────────────────────────────────────────────────────────
+// ─── EDIT NOTA MODAL ──────────────────────────────────────────────────────────
 function EditNotaModal({ order, onClose, onSaved }) {
   const [metode, setMetode] = useState(order.metode || "");
   const [items, setItems] = useState(() => (order.items || []).map(it => ({ ...it })));
   const [statusBayar, setStatusBayar] = useState(order.statusBayar || "Belum Lunas");
   const [saving, setSaving] = useState(false);
   const [statusOrder, setStatusOrder] = useState(order?.status_order || order?.status || "Waiting List");
+
+  // ── DISKON STATE — inisialisasi dari data order yang ada ──────────────────
+  const [diskonType, setDiskonType] = useState(order.diskon?.type || "persen");
+  const [diskonVal, setDiskonVal] = useState(
+    order.diskon?.nilai != null ? String(order.diskon.nilai) : ""
+  );
+
+  const totalBaru = items.reduce((s, it) => s + (it.subtotal || 0), 0);
+
+  // Hitung diskon secara reaktif
+  const diskonAmount = diskonType === "persen"
+    ? Math.round(totalBaru * (parseFloat(diskonVal) || 0) / 100)
+    : Math.min(parseFloat(diskonVal) || 0, totalBaru);
+
+  const totalAkhir = totalBaru - diskonAmount;
 
   const updateHarga = (idx, val) => {
     setItems(prev => prev.map((it, i) => {
@@ -1389,8 +1408,6 @@ function EditNotaModal({ order, onClose, onSaved }) {
     }));
   };
 
-  const totalBaru = items.reduce((s, it) => s + (it.subtotal || 0), 0);
-
   const EDIT_PAY_METHODS = [
     { id: "Tunai", Icon: Banknote },
     { id: "QRIS", Icon: QrCode },
@@ -1404,24 +1421,42 @@ function EditNotaModal({ order, onClose, onSaved }) {
       const { doc, updateDoc, collection, query, where, getDocs } = await import("firebase/firestore");
       const itemsPayload = items.map((it) => ({
         produkId: it.produkId || "", nama: it.nama, satuan: it.satuan, qty: it.qty, harga: it.harga,
-        panjang: null, lebar: null, luas: it.satuan === "meter" ? (parseFloat(it.luas) || 0) : null, subtotal: it.subtotal,
+        panjang: null, lebar: null,
+        luas: it.satuan === "meter" ? (parseFloat(it.luas) || 0) : null,
+        subtotal: it.subtotal,
       }));
       const q = query(collection(db, "transactions"), where("notaId", "==", order.notaId));
       const txSnap = await getDocs(q);
       if (txSnap.empty) { alert("Transaksi tidak ditemukan!"); return; }
       for (const txDoc of txSnap.docs) {
         await updateDoc(doc(db, "transactions", txDoc.id), {
-          items: itemsPayload, total_harga: totalBaru, statusBayar, metode_pembayaran: metode, status_order: statusOrder,
+          items: itemsPayload,
+          subtotal_harga: totalBaru,
+          diskon: {
+            type: diskonType,
+            nilai: parseFloat(diskonVal) || 0,
+            amount: diskonAmount,
+          },
+          total_harga: totalAkhir,
+          statusBayar,
+          metode_pembayaran: metode,
+          status_order: statusOrder,
         });
       }
-      onSaved(); onClose();
-    } catch (e) { console.error("Gagal menyimpan:", e); alert("Gagal menyimpan: " + e.message); }
-    finally { setSaving(false); }
+      onSaved();
+      onClose();
+    } catch (e) {
+      console.error("Gagal menyimpan:", e);
+      alert("Gagal menyimpan: " + e.message);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(26,46,53,0.6)", display: "flex", alignItems: "flex-end" }}>
       <div style={{ background: C.white, width: "100%", borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: "90vh", display: "flex", flexDirection: "column", animation: "slideUp .25s ease-out" }}>
+        {/* Header */}
         <div style={{ padding: "16px 20px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
           <div>
             <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 16, fontWeight: 700, color: C.dark }}>Edit Nota</div>
@@ -1433,6 +1468,8 @@ function EditNotaModal({ order, onClose, onSaved }) {
         </div>
 
         <div style={{ overflowY: "auto", flex: 1, padding: "16px 20px 8px" }}>
+
+          {/* Status */}
           <div className="section-header">Status</div>
           <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
             {["Belum Lunas", "Lunas"].map(s => (
@@ -1440,23 +1477,24 @@ function EditNotaModal({ order, onClose, onSaved }) {
                 flex: 1, padding: "12px", borderRadius: 12, cursor: "pointer", textAlign: "center",
                 border: `2px solid ${statusBayar === s ? C.primary : C.border}`,
                 background: statusBayar === s ? C.primary100 : C.white,
-                fontWeight: 700, fontSize: 13, color: statusBayar === s ? C.primary700 : C.muted, transition: "all .15s",
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                fontWeight: 700, fontSize: 13, color: statusBayar === s ? C.primary700 : C.muted,
+                transition: "all .15s", display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
               }}>
                 {s === "Lunas" ? <><CheckCircle size={14} /> Lunas</> : <><Clock size={14} /> Belum Lunas</>}
               </div>
             ))}
           </div>
 
+          {/* Metode Pembayaran */}
           <div className="section-header">Metode Pembayaran</div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 20 }}>
             {EDIT_PAY_METHODS.map((m) => {
               const Icon = m.Icon;
               return (
                 <div key={m.id} onClick={() => setMetode(m.id)} style={{
-                  border: `2px solid ${metode === m.id ? C.primary : C.border}`, borderRadius: 12, padding: "12px", cursor: "pointer", textAlign: "center",
-                  background: metode === m.id ? C.primary100 : C.white, transition: "all .15s",
-                  display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
+                  border: `2px solid ${metode === m.id ? C.primary : C.border}`, borderRadius: 12, padding: "12px",
+                  cursor: "pointer", textAlign: "center", background: metode === m.id ? C.primary100 : C.white,
+                  transition: "all .15s", display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
                 }}>
                   <Icon size={20} color={metode === m.id ? C.primary700 : C.darkMid} />
                   <div style={{ fontSize: 12, fontWeight: 700, color: metode === m.id ? C.primary700 : C.dark }}>{m.id}</div>
@@ -1465,6 +1503,7 @@ function EditNotaModal({ order, onClose, onSaved }) {
             })}
           </div>
 
+          {/* Detail Item */}
           <div className="section-header">Detail Item</div>
           {items.map((item, idx) => (
             <div key={idx} style={{ border: `1.5px solid ${C.border}`, borderRadius: 12, padding: "12px 14px", marginBottom: 10, background: C.surface }}>
@@ -1477,7 +1516,9 @@ function EditNotaModal({ order, onClose, onSaved }) {
                 </div>
               </div>
               <div style={{ marginBottom: 8 }}>
-                <div style={{ fontSize: 11, color: C.muted, fontWeight: 600, marginBottom: 4, textTransform: "uppercase" }}>Harga {item.satuan === "meter" ? "/m²" : "/pcs"}</div>
+                <div style={{ fontSize: 11, color: C.muted, fontWeight: 600, marginBottom: 4, textTransform: "uppercase" }}>
+                  Harga {item.satuan === "meter" ? "/m²" : "/pcs"}
+                </div>
                 <input type="number" value={item.harga} onChange={e => updateHarga(idx, e.target.value)}
                   style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: `1.5px solid ${C.border}`, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
               </div>
@@ -1486,7 +1527,9 @@ function EditNotaModal({ order, onClose, onSaved }) {
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                     {["panjang", "lebar"].map(field => (
                       <div key={field}>
-                        <div style={{ fontSize: 11, color: C.muted, fontWeight: 600, marginBottom: 4, textTransform: "uppercase" }}>{field.charAt(0).toUpperCase() + field.slice(1)} (m)</div>
+                        <div style={{ fontSize: 11, color: C.muted, fontWeight: 600, marginBottom: 4, textTransform: "uppercase" }}>
+                          {field.charAt(0).toUpperCase() + field.slice(1)} (m)
+                        </div>
                         <input type="number" step="0.1" min="0" value={item[field] ?? 0}
                           onChange={e => updateMeter(idx, field, e.target.value)}
                           style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: `1.5px solid ${C.border}`, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
@@ -1510,10 +1553,57 @@ function EditNotaModal({ order, onClose, onSaved }) {
             </div>
           ))}
 
-          <div style={{ background: C.dark, borderRadius: 12, padding: "14px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-            <span style={{ fontSize: 14, fontWeight: 700, color: C.primary }}>Total</span>
-            <span style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 20, fontWeight: 800, color: C.white }}>{rupiah(totalBaru)}</span>
+          {/* ── DISKON ─────────────────────────────────────────────────────── */}
+          <div className="section-header">Diskon (Opsional)</div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+            {["persen", "nominal"].map(t => (
+              <button
+                key={t}
+                className={`btn btn-sm ${diskonType === t ? "btn-primary" : "btn-secondary"}`}
+                style={{ flex: 1 }}
+                onClick={() => { setDiskonType(t); setDiskonVal(""); }}
+              >
+                {t === "persen" ? "% Persen" : "Rp Nominal"}
+              </button>
+            ))}
           </div>
+          <div style={{ marginBottom: 20 }}>
+            <input
+              type="number"
+              placeholder={diskonType === "persen" ? "Contoh: 10 (artinya 10%)" : "Contoh: 50000"}
+              value={diskonVal}
+              min="0"
+              max={diskonType === "persen" ? 100 : totalBaru}
+              onChange={(e) => setDiskonVal(e.target.value)}
+              style={{ width: "100%", padding: "11px 14px", border: `1.5px solid ${C.border}`, borderRadius: 10, fontSize: 14, fontFamily: "inherit", color: C.dark, outline: "none", boxSizing: "border-box" }}
+            />
+            {diskonAmount > 0 && (
+              <div style={{ marginTop: 6, fontSize: 12, color: C.success, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
+                <CheckCircle size={12} /> Hemat {rupiah(diskonAmount)}{diskonType === "persen" ? ` (${diskonVal}%)` : ""}
+              </div>
+            )}
+          </div>
+
+          {/* Total */}
+          <div style={{ background: C.dark, borderRadius: 12, padding: "14px 16px", marginBottom: 16 }}>
+            {diskonAmount > 0 && (
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                <span style={{ fontSize: 12, color: C.muted }}>Subtotal</span>
+                <span style={{ fontSize: 12, color: C.muted, textDecoration: "line-through" }}>{rupiah(totalBaru)}</span>
+              </div>
+            )}
+            {diskonAmount > 0 && (
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                <span style={{ fontSize: 12, color: C.success }}>Diskon</span>
+                <span style={{ fontSize: 12, color: C.success, fontWeight: 600 }}>−{rupiah(diskonAmount)}</span>
+              </div>
+            )}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: 14, fontWeight: 700, color: C.primary }}>Total</span>
+              <span style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 20, fontWeight: 800, color: C.white }}>{rupiah(totalAkhir)}</span>
+            </div>
+          </div>
+
         </div>
 
         <div style={{ padding: "12px 20px 20px", borderTop: `1px solid ${C.border}`, flexShrink: 0 }}>
@@ -1727,6 +1817,14 @@ function NotaPage({ notaId, orders, onBack }) {
 
         {canEdit && (
           <>
+            <button
+              className="btn btn-ghost btn-full no-print"
+              style={{ marginBottom: 12, gap: 6 }}
+              onClick={() => setShowEdit(true)}
+            >
+              <Edit3 size={16} /> Edit Nota
+            </button>
+
             {!showDeleteConfirm ? (
               <button
                 className="btn btn-danger btn-full no-print"

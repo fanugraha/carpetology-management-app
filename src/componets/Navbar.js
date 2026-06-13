@@ -1,7 +1,6 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
-// Lucide-style SVG icons (inline, no dependency)
 const IconHome = ({ size = 22, color = 'currentColor' }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
     stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -31,10 +30,22 @@ const IconCashRegister = ({ size = 22, color = 'currentColor' }) => (
   </svg>
 );
 
+// Icon pelanggan (Users)
+const IconUsers = ({ size = 22, color = 'currentColor' }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+    stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+    <circle cx="9" cy="7" r="4" />
+    <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+    <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+  </svg>
+);
+
 const navItems = [
-  { path: '/admin',          key: 'orders', label: 'Orders',  Icon: IconHome         },
-  { path: '/admin/products', key: 'produk', label: 'Produk',  Icon: IconBox          },
-  { path: '/admin/kasir',    key: 'kasir',  label: 'Kasir',   Icon: IconCashRegister },
+  { path: '/admin',           key: 'orders',    label: 'Orders',     Icon: IconHome         },
+  { path: '/admin/products',  key: 'produk',    label: 'Produk',     Icon: IconBox          },
+  { path: '/admin/kasir',     key: 'kasir',     label: 'Kasir',      Icon: IconCashRegister },
+  { path: '/admin/customers', key: 'customers', label: 'Pelanggan',  Icon: IconUsers        },
 ];
 
 function Navbar() {

@@ -13,6 +13,8 @@ import ProductPage from './pages/ProductPage';
 import DetailProduk from './pages/DetailProduk';
 import KasirPage from './pages/kasir-system/KasirPage';
 import NotaPublicPage from './pages/NotaPublicPage';
+import TrackingDetailPage from './pages/TrackingDetailPage';
+import CustomerPage from './pages/CustomerPage';
 import './global.css';
 import './index.css';
 
@@ -46,6 +48,7 @@ function App() {
                     <Route path="/" element={<TrackingPage />} />
                     <Route path="/nota/:notaId" element={<NotaPublicPage />} />
                     <Route path="/jadwal" element={<BookingHomeVisit bookings={[]} />} />
+                    <Route path="/track/:notaId" element={<TrackingDetailPage />} />
                     <Route path="/admin-login" element={
                         user ? <Navigate to="/admin" /> : <Login />
                     } />
@@ -53,6 +56,9 @@ function App() {
                     {/* ── Admin only ── */}
                     <Route path="/admin/kasir" element={
                         <AdminRoute><KasirPage /></AdminRoute>
+                    } />
+                    <Route path="/admin/customers" element={
+                        <AdminRoute><CustomerPage /></AdminRoute>
                     } />
                     <Route path="/admin/products" element={
                         <AdminRoute><ProductPage /></AdminRoute>
