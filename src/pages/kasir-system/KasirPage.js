@@ -1,875 +1,459 @@
-import { useState, useEffect, useRef } from "react";
+/**
+ * KasirPage — v5
+ *
+ * Semua perubahan dari v4:
+ * ─────────────────────────────────────────────────────────────────
+ * [BUG FIX 🔴] KalkulatorPxL useEffect dependency
+ *   - Tambah `onLuasChange` ke dependency array → pakai useCallback di Step1
+ *   - Cegah stale closure saat onLuasChange berubah referensi
+ *
+ * [BUG FIX 🔴] lastCustomer stale closure di useEffect orders
+ *   - Ganti cek `!lastCustomer` dengan useRef (lastCustomerSet)
+ *   - Dependency array tidak lagi menyebabkan infinite loop
+ *
+ * [BUG FIX 🔴] Mobile auto-zoom pada input number
+ *   - CSS .inp, .pxl-inp, semua input number → font-size: 16px
+ *   - Tambah `touch-action: manipulation` dan viewport meta via CSS
+ *
+ * [BUG FIX 🟡] KalkulatorPxL reset saat cart berubah
+ *   - State panjang/lebar dipindah ke cart item (cartDims[cartKey])
+ *   - KalkulatorPxL terima initialPanjang/initialLebar sebagai prop
+ *   - Komponen tidak di-unmount saat cart entry lain berubah
+ *
+ * [BUG FIX 🟡] Workshop statusBayar selalu "Lunas"
+ *   - QRIS & Transfer → "Menunggu Konfirmasi" (bukan langsung Lunas)
+ *   - Tunai → "Lunas"
+ *   - Belum Bayar → "Belum Lunas"
+ *   - Badge di success page merefleksikan status baru
+ *
+ * [UX 🟡] Konfirmasi Tandai Lunas diganti modal (bukan window.confirm)
+ *   - Modal sheet dengan preview nota ID + nama customer
+ *   - Spinner saat proses update
+ *   - window.confirm dihapus seluruhnya
+ *
+ * [UX 🟢] Feedback loading tandai Lunas
+ *   - Tombol "Tandai Lunas" → spinner "Memproses..." selama update
+ *   - lunasLoading tracking per notaId sudah ada di v4, diperkuat
+ *
+ * [UX 🟢] Cart persist via sessionStorage
+ *   - cart, customer, svcType, step disimpan ke sessionStorage
+ *   - Restore otomatis saat halaman reload/refresh
+ *   - Di-clear saat transaksi selesai (handleReset)
+ *
+ * [UX 🟢] Label pay-chip dipersingkat
+ *   - "Belum Bayar" → label: "Tempo", sub: "Hutang"
+ *   - Tidak terpotong di mobile 4-kolom
+ *
+ * [SKIP] Dark mode — user minta skip
+ * [SKIP] Shortcut deposit chips — user minta skip
+ */
+
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   collection, getDocs, addDoc, doc, serverTimestamp,
-  query, orderBy, onSnapshot,
+  query, orderBy, onSnapshot, updateDoc, where, deleteDoc, limit,
 } from "firebase/firestore";
 import {
-  Search, X, ShoppingCart, ClipboardList, Package, Users, CreditCard,
-  FileText, CheckCircle, AlertCircle, Clock, Trash2, Plus, Minus,
+  Search, X, ShoppingCart, ClipboardList, Package,
+  CheckCircle, AlertCircle, Clock, Trash2, Plus, Minus,
   ChevronRight, Phone, Printer, Edit3, Copy, MessageCircle,
-  Ruler, Layers, Truck, Banknote, QrCode, Building2, Home,
-  Loader2, Eye, Download, ArrowLeft, ChevronDown,
+  Layers, Banknote, QrCode, Building2, Home,
+  Loader2, Eye, Download, ArrowLeft, Star,
+  AlertTriangle, Tag, Save,
 } from "lucide-react";
 import { db } from "../../firebase";
 import Navbar from "../../componets/Navbar";
 import { useAuth } from "../../context/AuthContext";
+import * as XLSX from "xlsx";
 
-// ─── BRAND COLORS ─────────────────────────────────────────────────────────────
+// ─── WARNA ────────────────────────────────────────────────────────────────────
 const C = {
-  primary: "#04CDCD",
-  primary600: "#03A8A8",
-  primary700: "#028585",
-  primary100: "#E0FAFA",
-  primary200: "#B3F0F0",
-  primary50: "#F0FEFE",
-  accent: "#FF6B6B",
-  accentLight: "#FFE8E8",
-  dark: "#1A2E35",
-  darkMid: "#2C4A54",
-  muted: "#6B8894",
-  border: "#D4ECEC",
-  surface: "#F4FEFE",
-  white: "#FFFFFF",
-  success: "#22C55E",
-  successBg: "#DCFCE7",
-  warning: "#F59E0B",
-  warningBg: "#FEF3C7",
-  danger: "#EF4444",
-  dangerBg: "#FEE2E2",
+  primary: "#04CDCD", p600: "#03A8A8", p700: "#028585", p100: "#E0FAFA",
+  p200: "#B3F0F0", p50: "#F0FEFE", amber: "#D97706", amberBg: "#FEF3C7",
+  amberBd: "#FCD34D", amberTx: "#92400E", dark: "#1A2E35", dark2: "#2C4A54",
+  muted: "#6B8894", border: "#D4ECEC", surface: "#F4FEFE", white: "#FFFFFF",
+  ok: "#22C55E", okBg: "#DCFCE7", okTx: "#15803D", warn: "#F59E0B",
+  warnBg: "#FEF3C7", warnTx: "#92400E", red: "#EF4444", redBg: "#FEE2E2",
+  blue: "#3B82F6", blueBg: "#EFF6FF", blueTx: "#1D4ED8",
 };
 
-// ─── GLOBAL STYLES ────────────────────────────────────────────────────────────
-const globalCss = `
-  @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap');
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body, #root { font-family: 'Plus Jakarta Sans', sans-serif; background: ${C.surface}; color: ${C.dark}; min-height: 100vh; }
-
-  .kasir-root { display: flex; flex-direction: column; min-height: 100vh; max-width: 480px; margin: 0 auto; background: ${C.white}; box-shadow: 0 0 40px rgba(4,205,205,0.08); padding-bottom: 60px; }
-
-  /* Topbar */
-  .topbar { background: ${C.dark}; padding: 14px 20px; display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 50; }
-  .topbar-brand { font-family: 'Space Grotesk', sans-serif; font-size: 18px; font-weight: 700; color: ${C.primary}; letter-spacing: -0.3px; }
-  .topbar-sub { font-size: 12px; color: ${C.muted}; margin-top: 1px; }
-  .topbar-icon { width: 36px; height: 36px; background: ${C.primary}; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: ${C.dark}; }
-
-  /* Step indicator */
-  .steps-bar { display: flex; align-items: center; padding: 16px 20px; background: ${C.white}; border-bottom: 1px solid ${C.border}; }
-  .step-item { display: flex; align-items: center; flex: 1; }
-  .step-dot { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; transition: all .25s; }
-  .step-dot.done { background: ${C.primary}; color: white; }
-  .step-dot.active { background: ${C.primary}; color: white; box-shadow: 0 0 0 4px ${C.primary200}; }
-  .step-dot.pending { background: ${C.border}; color: ${C.muted}; }
-  .step-line { flex: 1; height: 2px; background: ${C.border}; margin: 0 4px; transition: background .25s; }
-  .step-line.done { background: ${C.primary}; }
-  .step-label { font-size: 9px; font-weight: 600; color: ${C.muted}; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; text-align: center; }
-  .step-wrapper { display: flex; flex-direction: column; align-items: center; }
-
-  /* Content */
-  .step-content { flex: 1; padding: 20px; overflow-y: auto; }
-
-  /* Inputs */
-  .field { margin-bottom: 16px; }
-  .field label { display: block; font-size: 12px; font-weight: 600; color: ${C.muted}; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
-  .field input, .field select, .field textarea { width: 100%; padding: 11px 14px; border: 1.5px solid ${C.border}; border-radius: 10px; font-size: 14px; font-family: inherit; color: ${C.dark}; background: ${C.white}; outline: none; transition: border-color .2s, box-shadow .2s; }
-  .field input:focus, .field select:focus { border-color: ${C.primary}; box-shadow: 0 0 0 3px ${C.primary100}; }
-  .field input::placeholder { color: #BCD8D8; }
-
-  /* ── SEARCH BAR — diperbaiki ─────────────────────────────────────────────── */
-  .search-wrap {
-    position: relative;
-    margin-bottom: 16px;
-    display: flex;
-    align-items: center;
-  }
-  .search-wrap .search-icon-box {
-    position: absolute;
-    left: 12px;
-    top: 50%;
-    transform: translateY(-50%);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: ${C.muted};
-    pointer-events: none;
-    z-index: 1;
-  }
-  .search-wrap input {
-    width: 100%;
-    padding: 11px 40px 11px 40px;
-    border: 1.5px solid ${C.border};
-    border-radius: 10px;
-    font-size: 14px;
-    font-family: inherit;
-    color: ${C.dark};
-    background: ${C.surface};
-    outline: none;
-    transition: border-color .2s, box-shadow .2s;
-  }
-  .search-wrap input:focus {
-    border-color: ${C.primary};
-    box-shadow: 0 0 0 3px ${C.primary100};
-    background: ${C.white};
-  }
-  .search-wrap input::placeholder { color: #BCD8D8; }
-  .search-clear-btn {
-    position: absolute;
-    right: 10px;
-    top: 50%;
-    transform: translateY(-50%);
-    background: none;
-    border: none;
-    cursor: pointer;
-    color: ${C.muted};
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 4px;
-    border-radius: 50%;
-    transition: background .15s;
-    z-index: 1;
-  }
-  .search-clear-btn:hover { background: ${C.border}; color: ${C.dark}; }
-
-  /* Buttons */
-  .btn { padding: 13px 20px; border-radius: 12px; font-size: 14px; font-weight: 700; border: none; cursor: pointer; transition: all .18s; font-family: inherit; display: flex; align-items: center; justify-content: center; gap: 8px; }
-  .btn-primary { background: ${C.primary}; color: white; }
-  .btn-primary:hover { background: ${C.primary600}; transform: translateY(-1px); box-shadow: 0 4px 16px rgba(4,205,205,0.3); }
-  .btn-primary:active { transform: translateY(0); }
-  .btn-secondary { background: ${C.surface}; color: ${C.dark}; border: 1.5px solid ${C.border}; }
-  .btn-secondary:hover { background: ${C.primary100}; border-color: ${C.primary}; }
-  .btn-danger { background: ${C.dangerBg}; color: ${C.danger}; }
-  .btn-danger:hover { background: ${C.danger}; color: white; }
-  .btn-ghost { background: none; color: ${C.primary}; border: 1.5px solid ${C.primary}; }
-  .btn-ghost:hover { background: ${C.primary100}; }
-  .btn-full { width: 100%; }
-  .btn-sm { padding: 7px 12px; font-size: 12px; border-radius: 8px; }
-  .btn-icon { width: 32px; height: 32px; padding: 0; border-radius: 8px; }
-  .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; box-shadow: none; }
-
-  /* Footer sticky */
-  .footer-bar { padding: 16px 20px; background: ${C.white}; border-top: 1px solid ${C.border}; display: flex; flex-direction: column; gap: 10px; }
-  .footer-summary { display: flex; justify-content: space-between; align-items: center; }
-  .footer-total { font-family: 'Space Grotesk', sans-serif; font-size: 20px; font-weight: 700; color: ${C.dark}; }
-  .footer-label { font-size: 12px; color: ${C.muted}; }
-
-  /* Product card */
-  .prod-card { border: 1.5px solid ${C.border}; border-radius: 12px; padding: 12px 14px; cursor: pointer; transition: all .15s; display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; background: ${C.white}; }
-  .prod-card:hover { border-color: ${C.primary}; background: ${C.primary50}; }
-  .prod-card.selected { border-color: ${C.primary}; background: ${C.primary50}; }
-  .prod-name { font-size: 14px; font-weight: 600; color: ${C.dark}; }
-  .prod-type { font-size: 11px; color: ${C.muted}; margin-top: 4px; display: flex; align-items: center; gap: 4px; }
-  .prod-price { font-family: 'Space Grotesk', sans-serif; font-size: 13px; font-weight: 600; color: ${C.primary700}; }
-  .prod-unit { font-size: 10px; color: ${C.muted}; }
-
-  /* Badge */
-  .badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; }
-  .badge-primary { background: ${C.primary100}; color: ${C.primary700}; }
-  .badge-meter { background: #FEF3C7; color: #B45309; }
-  .badge-unit { background: ${C.primary50}; color: ${C.primary700}; border: 1px solid ${C.primary200}; }
-  .badge-success { background: ${C.successBg}; color: #15803D; }
-  .badge-warning { background: ${C.warningBg}; color: #D97706; }
-  .badge-danger { background: ${C.dangerBg}; color: ${C.danger}; }
-  .badge-gray { background: #F1F5F9; color: #64748B; }
-
-  /* Cart item */
-  .cart-item { border: 1px solid ${C.border}; border-radius: 10px; padding: 12px 14px; margin-bottom: 8px; background: ${C.white}; }
-  .cart-item-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
-  .cart-item-name { font-size: 13px; font-weight: 600; color: ${C.dark}; }
-  .cart-item-sub { font-size: 11px; color: ${C.muted}; margin-top: 2px; }
-  .cart-item-controls { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
-  .qty-btn { width: 28px; height: 28px; border-radius: 7px; border: 1.5px solid ${C.border}; background: ${C.white}; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all .15s; color: ${C.dark}; }
-  .qty-btn:hover { background: ${C.primary}; color: white; border-color: ${C.primary}; }
-  .qty-display { font-family: 'Space Grotesk', sans-serif; font-size: 14px; font-weight: 700; min-width: 24px; text-align: center; }
-
-  /* Meter input */
-  .meter-result { background: ${C.primary100}; border-radius: 8px; padding: 8px 12px; display: flex; justify-content: space-between; align-items: center; margin-top: 8px; }
-  .meter-result-label { font-size: 11px; color: ${C.primary700}; font-weight: 600; }
-  .meter-result-value { font-family: 'Space Grotesk', sans-serif; font-size: 14px; font-weight: 700; color: ${C.primary700}; }
-
-  /* Customer card */
-  .cust-card { border: 1.5px solid ${C.border}; border-radius: 12px; padding: 14px 16px; cursor: pointer; transition: all .15s; margin-bottom: 8px; }
-  .cust-card:hover { border-color: ${C.primary}; background: ${C.primary50}; }
-  .cust-card.selected { border-color: ${C.primary}; background: ${C.primary50}; box-shadow: 0 0 0 3px ${C.primary100}; }
-  .cust-name { font-size: 14px; font-weight: 700; color: ${C.dark}; }
-  .cust-phone { font-size: 12px; color: ${C.muted}; margin-top: 2px; display: flex; align-items: center; gap: 4px; }
-
-  /* Payment methods */
-  .pay-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; }
-  .pay-option { border: 2px solid ${C.border}; border-radius: 12px; padding: 14px; cursor: pointer; transition: all .15s; text-align: center; background: ${C.white}; }
-  .pay-option:hover { border-color: ${C.primary200}; background: ${C.primary50}; }
-  .pay-option.selected { border-color: ${C.primary}; background: ${C.primary100}; }
-  .pay-option-icon { display: flex; align-items: center; justify-content: center; margin-bottom: 6px; color: ${C.darkMid}; }
-  .pay-option.selected .pay-option-icon { color: ${C.primary700}; }
-  .pay-option-name { font-size: 13px; font-weight: 700; color: ${C.dark}; }
-  .pay-option-sub { font-size: 10px; color: ${C.muted}; margin-top: 2px; }
-
-  /* Nota */
-  .nota-card { border: 1px solid ${C.border}; border-radius: 16px; overflow: hidden; }
-  .nota-header { background: ${C.dark}; padding: 24px 20px; text-align: center; }
-  .nota-brand { font-family: 'Space Grotesk', sans-serif; font-size: 22px; font-weight: 700; color: ${C.primary}; display: flex; align-items: center; justify-content: center; gap: 8px; }
-  .nota-tagline { font-size: 11px; color: ${C.muted}; margin-top: 2px; }
-  .nota-body { padding: 20px; }
-  .nota-row { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
-  .nota-key { font-size: 12px; color: ${C.muted}; }
-  .nota-val { font-size: 13px; font-weight: 600; color: ${C.dark}; text-align: right; max-width: 55%; }
-  .nota-divider { height: 1px; background: ${C.border}; margin: 14px 0; }
-  .nota-total-row { display: flex; justify-content: space-between; align-items: center; background: ${C.primary100}; border-radius: 10px; padding: 12px 14px; margin-top: 12px; }
-  .nota-total-label { font-size: 13px; font-weight: 700; color: ${C.primary700}; }
-  .nota-total-val { font-family: 'Space Grotesk', sans-serif; font-size: 18px; font-weight: 800; color: ${C.primary700}; }
-  .nota-item-row { display: flex; justify-content: space-between; margin-bottom: 6px; }
-  .nota-item-name { font-size: 12px; color: ${C.dark}; }
-  .nota-item-price { font-size: 12px; font-weight: 600; color: ${C.dark}; }
-
-  /* History */
-  .history-card { border: 1px solid ${C.border}; border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; background: ${C.white}; transition: all .15s; cursor: pointer; }
-  .history-card:hover { border-color: ${C.primary}; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(4,205,205,0.1); }
-  .history-top { display: flex; justify-content: space-between; align-items: flex-start; }
-  .history-cust { font-size: 14px; font-weight: 700; color: ${C.dark}; }
-  .history-date { font-size: 11px; color: ${C.muted}; }
-  .history-items { font-size: 12px; color: ${C.muted}; margin-top: 4px; }
-  .history-bottom { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; border-top: 1px solid ${C.border}; padding-top: 10px; }
-  .history-total { font-family: 'Space Grotesk', sans-serif; font-size: 15px; font-weight: 700; color: ${C.dark}; }
-
-  /* Nav tabs */
-  .nav-tabs { display: flex; background: ${C.dark}; }
-  .nav-tab { flex: 1; padding: 12px; text-align: center; font-size: 11px; font-weight: 700; color: ${C.muted}; cursor: pointer; transition: all .15s; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 2px solid transparent; display: flex; align-items: center; justify-content: center; gap: 6px; }
-  .nav-tab.active { color: ${C.primary}; border-bottom-color: ${C.primary}; }
-  .nav-tab:hover:not(.active) { color: ${C.primary200}; }
-
-  /* Success screen */
-  .success-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 40px 20px; min-height: 300px; }
-  .success-icon { width: 80px; height: 80px; background: ${C.successBg}; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-bottom: 20px; color: ${C.success}; }
-  .success-title { font-size: 22px; font-weight: 800; color: ${C.dark}; margin-bottom: 8px; }
-  .success-sub { font-size: 14px; color: ${C.muted}; margin-bottom: 24px; line-height: 1.6; }
-
-  /* Nota link box */
-  .nota-link-box { background: ${C.primary50}; border: 1.5px dashed ${C.primary}; border-radius: 12px; padding: 14px 16px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-  .nota-link-text { font-size: 12px; color: ${C.primary700}; font-weight: 600; word-break: break-all; flex: 1; }
-
-  /* Section header */
-  .section-header { font-size: 11px; font-weight: 700; color: ${C.muted}; text-transform: uppercase; letter-spacing: 0.7px; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
-  .section-header::after { content: ''; flex: 1; height: 1px; background: ${C.border}; }
-
-  /* Empty state */
-  .empty-state { text-align: center; padding: 40px 20px; color: ${C.muted}; }
-  .empty-icon { display: flex; align-items: center; justify-content: center; margin-bottom: 12px; }
-  .empty-text { font-size: 13px; }
-
-  /* Tab chip */
-  .tab-chips { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
-  .tab-chip { padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600; cursor: pointer; border: 1.5px solid ${C.border}; background: ${C.white}; color: ${C.muted}; transition: all .15s; }
-  .tab-chip.active { background: ${C.primary}; color: white; border-color: ${C.primary}; }
-  .tab-chip:hover:not(.active) { border-color: ${C.primary}; color: ${C.primary}; }
-
-  /* Divider */
-  .or-divider { display: flex; align-items: center; gap: 10px; margin: 16px 0; color: ${C.muted}; font-size: 12px; }
-  .or-divider::before, .or-divider::after { content: ''; flex: 1; height: 1px; background: ${C.border}; }
-
-  /* Nota print page */
-  @media print { .no-print { display: none !important; } }
-
-  /* Animations */
-  @keyframes slideUp { from { opacity:0; transform: translateY(16px); } to { opacity:1; transform: translateY(0); } }
-  @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
-  .animate-in { animation: slideUp .28s ease-out; }
-  .fade-in { animation: fadeIn .2s ease-out; }
-
-  /* Scroll */
-  ::-webkit-scrollbar { width: 4px; }
-  ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: ${C.border}; border-radius: 4px; }
-
-  /* Mini stat */
-  .mini-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
-  .mini-stat { background: ${C.surface}; border-radius: 10px; padding: 12px 14px; border: 1px solid ${C.border}; }
-  .mini-stat-label { font-size: 11px; color: ${C.muted}; margin-bottom: 4px; }
-  .mini-stat-value { font-family: 'Space Grotesk', sans-serif; font-size: 18px; font-weight: 700; color: ${C.dark}; }
-
-  /* Toast */
-  .toast { position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%); background: ${C.dark}; color: white; padding: 10px 20px; border-radius: 10px; font-size: 13px; font-weight: 600; z-index: 999; animation: slideUp .2s ease-out; display: flex; align-items: center; gap: 8px; }
-
-  /* Loading spinner */
-  @keyframes spin { to { transform: rotate(360deg); } }
-  .loading-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 200px; gap: 12px; color: ${C.muted}; font-size: 13px; }
-  .spinning { animation: spin .7s linear infinite; }
+// ─── CSS ──────────────────────────────────────────────────────────────────────
+// [FIX 🔴] font-size: 16px pada semua input → cegah auto-zoom iOS/Android
+const CSS = `
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+*{box-sizing:border-box;margin:0;padding:0}
+body,#root{font-family:'Plus Jakarta Sans',sans-serif;background:${C.surface};color:${C.dark};min-height:100vh}
+input,select,textarea{font-size:16px!important;touch-action:manipulation}
+.kr{display:flex;flex-direction:column;min-height:100vh;max-width:480px;margin:0 auto;background:${C.white};box-shadow:0 0 40px rgba(4,205,205,0.08);padding-bottom:60px}
+.topbar{background:${C.dark};padding:11px 16px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:50}
+.tb-icon{width:30px;height:30px;background:${C.primary};border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:${C.dark}}
+.tb-brand{font-family:'Space Grotesk',sans-serif;font-size:16px;font-weight:700;color:${C.primary}}
+.tb-sub{font-size:10px;color:${C.muted};margin-top:1px}
+.sum-bar{background:${C.dark2};padding:7px 16px;display:flex;gap:8px}
+.sum-pill{flex:1;background:rgba(4,205,205,0.12);border-radius:7px;padding:5px 8px;text-align:center}
+.sum-pill-lbl{font-size:9px;color:${C.muted};text-transform:uppercase;letter-spacing:.4px}
+.sum-pill-val{font-size:13px;font-weight:700;color:${C.primary};margin-top:1px;font-family:'Space Grotesk',sans-serif}
+.sum-pill.red{background:rgba(239,68,68,.12)}
+.sum-pill.red .sum-pill-lbl{color:#F87171}
+.sum-pill.red .sum-pill-val{color:#F87171}
+.nav{display:flex;background:${C.dark}}
+.ntab{flex:1;padding:10px;text-align:center;font-size:11px;font-weight:700;color:${C.muted};cursor:pointer;border-bottom:2px solid transparent;display:flex;align-items:center;justify-content:center;gap:5px;transition:all .15s;text-transform:uppercase;letter-spacing:.4px}
+.ntab.active{color:${C.primary};border-bottom-color:${C.primary}}
+.ntab:hover:not(.active){color:${C.p200}}
+.steps{display:flex;align-items:center;padding:11px 16px;background:${C.white};border-bottom:1px solid ${C.border}}
+.sdot{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0;transition:all .2s}
+.sdot.done{background:${C.primary};color:white}
+.sdot.active{background:${C.primary};color:white;box-shadow:0 0 0 3px ${C.p200}}
+.sdot.pend{background:${C.border};color:${C.muted}}
+.sline{flex:1;height:2px;background:${C.border};margin:0 6px;transition:background .2s}
+.sline.done{background:${C.primary}}
+.swrap{display:flex;flex-direction:column;align-items:center}
+.slbl{font-size:9px;font-weight:700;color:${C.muted};text-transform:uppercase;letter-spacing:.5px;margin-top:3px;text-align:center}
+.pad{padding:14px 16px}
+.sc{flex:1;padding:14px 16px;overflow-y:auto}
+.svc-toggle{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+.svc-opt{border:2px solid ${C.border};border-radius:12px;padding:12px 10px;cursor:pointer;text-align:center;transition:all .18s;background:${C.white};position:relative}
+.svc-opt.ws.active{border-color:${C.primary};background:${C.p100}}
+.svc-opt.hs.active{border-color:${C.amber};background:${C.amberBg}}
+.svc-name{font-size:13px;font-weight:800;margin-top:4px}
+.svc-sub{font-size:10px;margin-top:2px}
+.svc-opt.ws .svc-name{color:${C.p700}}
+.svc-opt.hs .svc-name{color:${C.amber}}
+.svc-opt.ws .svc-sub{color:${C.p700}}
+.svc-opt.hs .svc-sub{color:${C.amber}}
+.svc-check{position:absolute;top:7px;right:7px;width:16px;height:16px;border-radius:50%;display:flex;align-items:center;justify-content:center}
+.svc-opt.ws.active .svc-check{background:${C.primary}}
+.svc-opt.hs.active .svc-check{background:${C.amber}}
+.last-cust{background:linear-gradient(135deg,${C.p100},${C.p50});border:1.5px solid ${C.primary};border-radius:10px;padding:9px 12px;display:flex;align-items:center;gap:10px;margin-bottom:8px;cursor:pointer;transition:all .15s}
+.last-cust:hover{border-color:${C.p700};transform:translateY(-1px)}
+.last-lbl{font-size:9px;font-weight:700;color:${C.p700};text-transform:uppercase;letter-spacing:.4px;margin-bottom:1px;display:flex;align-items:center;gap:3px}
+.last-name{font-size:13px;font-weight:700;color:${C.dark}}
+.last-hp{font-size:10px;color:${C.muted}}
+.cust-sel{border:1.5px dashed ${C.border};border-radius:10px;padding:11px 13px;cursor:pointer;display:flex;align-items:center;gap:10px;margin-bottom:8px;transition:all .15s;background:${C.surface}}
+.cust-sel.has{border-color:${C.primary};background:${C.p100};border-style:solid}
+.cust-av{width:34px;height:34px;border-radius:50%;background:${C.border};display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:12px;font-weight:700;color:${C.muted}}
+.cust-sel.has .cust-av{background:${C.p600};color:white}
+.s-wrap{position:relative;margin-bottom:10px;display:flex;align-items:center}
+.s-ico{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:${C.muted};pointer-events:none;display:flex;align-items:center;z-index:1}
+.s-wrap input{width:100%;padding:9px 36px 9px 32px;border:1.5px solid ${C.border};border-radius:9px;font-family:inherit;color:${C.dark};background:${C.surface};outline:none;transition:border-color .2s,box-shadow .2s}
+.s-wrap input:focus{border-color:${C.primary};box-shadow:0 0 0 3px ${C.p100};background:${C.white}}
+.s-wrap input::placeholder{color:#BCD8D8}
+.s-clr{position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:${C.muted};display:flex;align-items:center;padding:3px;border-radius:50%;transition:background .15s;z-index:1}
+.s-clr:hover{background:${C.border};color:${C.dark}}
+.prod-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:2px}
+.prod-card{border:1.5px solid ${C.border};border-radius:10px;padding:10px;cursor:pointer;background:${C.white};transition:all .15s;display:flex;flex-direction:column;gap:4px}
+.prod-card:hover{border-color:${C.primary};background:${C.p50}}
+.prod-card.sel{border-color:${C.primary};background:${C.p50}}
+.prod-card-name{font-size:12px;font-weight:700;color:${C.dark};line-height:1.3}
+.prod-card-price{font-size:12px;font-weight:800;color:${C.p700};font-family:'Space Grotesk',sans-serif}
+.prod-card-sub{font-size:9px;color:${C.muted}}
+.inp{width:100%;padding:8px 11px;border:1.5px solid ${C.border};border-radius:8px;font-family:inherit;color:${C.dark};outline:none;transition:border-color .2s}
+.inp:focus{border-color:${C.primary}}
+.badge{display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:5px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
+.bg-teal{background:${C.p100};color:${C.p700}}
+.bg-ok{background:${C.okBg};color:${C.okTx}}
+.bg-warn{background:${C.warnBg};color:${C.warnTx}}
+.bg-red{background:${C.redBg};color:${C.red}}
+.bg-amber{background:${C.amberBg};color:${C.amberTx}}
+.bg-gray{background:#F1F5F9;color:#475569}
+.bg-blue{background:${C.blueBg};color:${C.blueTx}}
+.sec{font-size:10px;font-weight:700;color:${C.muted};text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.sec::after{content:'';flex:1;height:1px;background:${C.border}}
+.chips{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap}
+.chip{padding:5px 12px;border-radius:20px;font-size:11px;font-weight:600;cursor:pointer;border:1.5px solid ${C.border};background:${C.white};color:${C.muted};transition:all .15s}
+.chip.active{background:${C.primary};color:white;border-color:${C.primary}}
+.chip:hover:not(.active){border-color:${C.primary};color:${C.primary}}
+.chip.red.active{background:${C.red};border-color:${C.red};color:white}
+.chip.amber.active{background:${C.amber};border-color:${C.amber};color:white}
+.pay-chips{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px}
+.pay-chip{border:2px solid ${C.border};border-radius:10px;padding:10px 6px;cursor:pointer;background:${C.white};transition:all .15s;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;width:100%;min-height:72px}
+.pay-chip:hover{border-color:${C.p200};background:${C.p50}}
+.pay-chip.sel{border-color:${C.primary};background:${C.p100}}
+.pay-chip-n{font-size:10px;font-weight:700;color:${C.dark};text-align:center;line-height:1.2}
+.pay-chip.sel .pay-chip-n{color:${C.p700}}
+.foot{padding:11px 16px;background:${C.white};border-top:1px solid ${C.border};display:flex;flex-direction:column;gap:8px}
+.btn{padding:11px 16px;border-radius:10px;font-size:13px;font-weight:700;border:none;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px;transition:all .18s}
+.btn-p{background:${C.primary};color:white}
+.btn-p:hover{background:${C.p600};transform:translateY(-1px);box-shadow:0 4px 14px rgba(4,205,205,.3)}
+.btn-p:active{transform:translateY(0)}
+.btn-s{background:${C.surface};color:${C.dark};border:1.5px solid ${C.border}}
+.btn-s:hover{background:${C.p100};border-color:${C.primary}}
+.btn-g{background:none;color:${C.primary};border:1.5px solid ${C.primary}}
+.btn-g:hover{background:${C.p100}}
+.btn-red{background:${C.redBg};color:${C.red};border:1.5px solid ${C.red}}
+.btn-full{width:100%}
+.btn-sm{padding:6px 11px;font-size:11px;border-radius:7px}
+.btn-green{background:#25D366;color:white;border:none}
+.btn:disabled{opacity:.4;cursor:not-allowed;transform:none!important;box-shadow:none!important}
+.diskon-wrap{display:flex;border:1.5px solid ${C.border};border-radius:9px;overflow:hidden;transition:border-color .2s}
+.diskon-wrap:focus-within{border-color:${C.primary}}
+.diskon-wrap.err{border-color:${C.red}!important}
+.diskon-input{flex:1;padding:10px 12px;border:none;font-weight:700;font-family:inherit;color:${C.dark};outline:none;background:transparent;min-width:0}
+.diskon-suffix{display:flex}
+.diskon-suffix-btn{padding:0 12px;background:${C.surface};border:none;border-left:1.5px solid ${C.border};cursor:pointer;font-size:12px;font-weight:700;color:${C.muted};font-family:inherit;transition:all .15s}
+.diskon-suffix-btn.active{background:${C.p100};color:${C.p700}}
+.diskon-suffix-btn:first-child{border-left:none;border-right:1px solid ${C.border}}
+.sum-box{background:${C.surface};border:.5px solid ${C.border};border-radius:10px;overflow:hidden;margin-bottom:10px}
+.sum-row{display:flex;justify-content:space-between;padding:7px 12px;border-bottom:.5px solid ${C.border};font-size:12px}
+.sum-total{display:flex;justify-content:space-between;padding:10px 12px;background:${C.p100}}
+.hist-card{border:1px solid ${C.border};border-radius:10px;padding:11px 13px;margin-bottom:7px;background:${C.white};cursor:pointer;transition:all .15s}
+.hist-card:hover{border-color:${C.primary};transform:translateY(-1px);box-shadow:0 3px 10px rgba(4,205,205,.1)}
+.hist-bot{display:flex;justify-content:space-between;align-items:center;margin-top:7px;padding-top:7px;border-top:.5px solid ${C.border};flex-wrap:wrap;gap:5px}
+.lunas-btn{background:${C.okBg};color:${C.okTx};border:1.5px solid ${C.ok};border-radius:6px;padding:4px 9px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:3px;transition:all .15s}
+.lunas-btn:hover{background:${C.ok};color:white}
+.lunas-btn:disabled{opacity:.5;cursor:not-allowed}
+.edit-btn{background:${C.p100};color:${C.p700};border:1.5px solid ${C.primary};border-radius:6px;padding:4px 9px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:3px;transition:all .15s}
+.edit-btn:hover{background:${C.primary};color:white}
+.del-btn{background:${C.redBg};color:${C.red};border:1.5px solid ${C.red};border-radius:6px;padding:4px 9px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:3px;transition:all .15s}
+.del-btn:hover{background:${C.red};color:white}
+.hl{background:#FEF9C3;border-radius:2px;padding:0 1px}
+.back-warn{background:${C.warnBg};border:1.5px solid ${C.warn};border-radius:9px;padding:9px 12px;display:flex;align-items:center;gap:8px;font-size:12px;color:${C.warnTx}}
+.nota-card{border:1px solid ${C.border};border-radius:14px;overflow:hidden}
+.nota-hdr{background:${C.dark};padding:20px;text-align:center}
+.nota-brand{font-family:'Space Grotesk',sans-serif;font-size:20px;font-weight:700;color:${C.primary};display:flex;align-items:center;justify-content:center;gap:6px}
+.loading{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:180px;gap:10px;color:${C.muted};font-size:13px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin{animation:spin .7s linear infinite}
+.empty{text-align:center;padding:36px 20px;color:${C.muted};font-size:13px}
+.empty-icon{display:flex;justify-content:center;margin-bottom:10px}
+@keyframes slideUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+.ani{animation:slideUp .22s ease-out}
+.fade{animation:fadeIn .18s ease-out}
+.toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:${C.dark};color:white;padding:9px 18px;border-radius:9px;font-size:12px;font-weight:700;z-index:999;animation:slideUp .2s ease-out;display:flex;align-items:center;gap:6px;white-space:nowrap}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:200;display:flex;align-items:flex-end;justify-content:center}
+.modal-sheet{background:${C.white};border-radius:16px 16px 0 0;padding:20px 16px;width:100%;max-width:480px;max-height:85vh;overflow-y:auto}
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-thumb{background:${C.border};border-radius:4px}
+@media print{.no-print{display:none!important}}
+.pxl-wrap{background:${C.white};border-radius:8px;padding:10px;border:1px solid ${C.border};margin-top:6px;overflow:hidden}
+.pxl-row{display:flex;align-items:center;gap:4px;margin-bottom:6px;width:100%}
+.pxl-inp{flex:1;min-width:0;width:0;padding:7px 4px;border:1.5px solid ${C.border};border-radius:7px;font-weight:700;font-family:inherit;color:${C.dark};outline:none;text-align:center;transition:border-color .2s}
+.pxl-inp:focus{border-color:${C.primary}}
+.pxl-result{background:${C.p100};border-radius:6px;padding:7px 10px;display:flex;justify-content:space-between;align-items:center;font-size:11px;color:${C.p700};font-weight:600}
+.deposit-badge{background:${C.amberBg};border:1.5px solid ${C.amberBd};border-radius:9px;padding:10px 13px}
+.entry-card{border:1.5px solid ${C.primary};border-radius:10px;padding:9px 11px;margin-bottom:6px;background:${C.p50}}
+.entry-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.entry-label{font-size:10px;font-weight:700;color:${C.p700};text-transform:uppercase;letter-spacing:.4px;display:flex;align-items:center;gap:4px}
+.session-banner{background:${C.amberBg};border-bottom:1px solid ${C.amberBd};padding:7px 16px;display:flex;align-items:center;gap:6px;font-size:11px;color:${C.amberTx};font-weight:600}
 `;
 
-// ─── CONSTANTS ─────────────────────────────────────────────────────────────────
-const PAY_METHODS = [
-  { id: "tunai", label: "Tunai", Icon: Banknote, sub: "Bayar langsung" },
-  { id: "qris", label: "QRIS", Icon: QrCode, sub: "Scan QR code" },
-  { id: "transfer", label: "Transfer", Icon: Building2, sub: "Bank transfer" },
-  { id: "belum", label: "Belum Payment", Icon: Clock, sub: "Hutang / cicil" },
-];
-
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
-const rupiah = (n) => "Rp " + (n || 0).toLocaleString("id-ID");
-const genId = () => Math.random().toString(36).substr(2, 8).toUpperCase();
+const rp = (n) => "Rp " + (n || 0).toLocaleString("id-ID");
+const genId = () => {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  const date = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
+  const time = `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+  const rand = Math.random().toString(36).substr(2, 5).toUpperCase();
+  return `NOTA-${date}-${time}-${rand}`;
+};
+const genCartKey = () => Math.random().toString(36).substr(2, 12);
 const fmtDate = (d) => {
   if (!d) return "-";
   const dt = d?.toDate ? d.toDate() : new Date(d);
-  return dt.toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" });
+  return dt.toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
 };
-const todayLabel = () =>
-  new Date().toLocaleDateString("id-ID", { weekday: "short", day: "numeric", month: "short" });
+const todayLabel = () => new Date().toLocaleDateString("id-ID", { weekday: "short", day: "numeric", month: "short" });
+const initials = (name = "") => name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase() || "?";
+const BULAN = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Ags", "Sep", "Okt", "Nov", "Des"];
+const fmtIndo = (d = new Date()) => `${String(d.getDate()).padStart(2, "0")} ${BULAN[d.getMonth()]} ${d.getFullYear()}`;
 
-const mapProduct = (docSnap) => {
-  const d = docSnap.data();
-  const rawSatuan = (d.satuan || "").toLowerCase().trim();
-  const isMeter = ["m²", "m2", "m", "meter", "meteran"].includes(rawSatuan);
-  const satuan = isMeter ? "meter" : "satuan";
+// ─── SESSION STORAGE HELPERS ──────────────────────────────────────────────────
+// [FIX 🟢] Persist cart agar tidak hilang saat refresh
+const SESSION_KEY = "carpetology_kasir_session";
+
+const saveSession = (data) => {
+  try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(data)); } catch (_) { }
+};
+
+const loadSession = () => {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (_) { return null; }
+};
+
+const clearSession = () => {
+  try { sessionStorage.removeItem(SESSION_KEY); } catch (_) { }
+};
+
+// ─── STATUS BAYAR LOGIC ───────────────────────────────────────────────────────
+// [FIX 🟡] Workshop QRIS/Transfer → "Menunggu Konfirmasi", bukan langsung Lunas
+const resolveStatusBayar = (isHS, dpAmount, payMethod) => {
+  if (isHS) return dpAmount > 0 ? "DP" : "Belum Lunas";
+  if (payMethod === "Belum Bayar") return "Belum Lunas";
+  if (payMethod === "Tunai") return "Lunas";
+  // QRIS & Transfer → perlu konfirmasi manual
+  return "Menunggu Konfirmasi";
+};
+
+const isStatusLunas = (status) => status === "Lunas";
+
+// Badge color berdasarkan status
+const statusBadgeClass = (status) => {
+  if (status === "Lunas") return "bg-ok";
+  if (status === "Menunggu Konfirmasi") return "bg-blue";
+  if (status === "DP") return "bg-amber";
+  return "bg-warn";
+};
+
+const statusIcon = (status) => {
+  if (status === "Lunas") return <CheckCircle size={9} />;
+  if (status === "Menunggu Konfirmasi") return <Clock size={9} />;
+  return <Clock size={9} />;
+};
+
+// ─── LABEL HELPER ─────────────────────────────────────────────────────────────
+const addItemLabels = (cart) => {
+  const count = {};
+  cart.forEach(c => { count[c.produkId] = (count[c.produkId] || 0) + 1; });
+  const seen = {};
+  return cart.map(c => {
+    if (count[c.produkId] <= 1) return { ...c, displayName: c.nama };
+    seen[c.produkId] = (seen[c.produkId] || 0) + 1;
+    return { ...c, displayName: `${c.nama} #${seen[c.produkId]}` };
+  });
+};
+
+// ─── DATA MAPPERS ─────────────────────────────────────────────────────────────
+const mapProduct = (snap) => {
+  const d = snap.data();
+  const raw = (d.satuan || "").toLowerCase().trim();
+  const isMeter = ["m²", "m2", "m", "meter", "meteran"].includes(raw);
   return {
-    id: docSnap.id,
+    id: snap.id,
     nama: d.nama_produk || d.nama || "",
-    kategori: d.kategori || inferKategori(d.nama_produk || d.nama || ""),
+    kategori: d.kategori || inferKat(d.nama_produk || d.nama || ""),
     harga: Number(d.harga_jual || d.harga || 0),
-    satuan,
-    unit_label: satuan === "meter" ? "/m²" : "/pcs",
-    created_at: d.created_at || null,
+    satuan: isMeter ? "meter" : "satuan",
   };
 };
-
-const mapCustomer = (docSnap) => {
-  const d = docSnap.data();
-  return {
-    id: docSnap.id,
-    nama: d.nama || d.nama_customer || d.name || d.fullname || "(Tanpa Nama)",
-    hp: d.no_hp || d.hp || d.phone || d.telepon || "",
-  };
+const mapCustomer = (snap) => {
+  const d = snap.data();
+  return { id: snap.id, nama: d.nama || d.nama_customer || "(Tanpa Nama)", hp: d.no_hp || d.hp || "" };
 };
-
-const mapOrder = (docSnap) => {
-  const d = docSnap.data();
+const mapOrder = (snap) => {
+  const d = snap.data();
   return {
-    id: docSnap.id,
-    customerId: d.customer_id || "",
-    customerNama: d.nama || d.customerNama || "",
-    customerHp: d.hp || d.customerHp || "-",
-    items: (d.items || []).map((it) => ({
-      produkId: it.produkId || "",
-      nama: it.nama || "",
-      satuan: it.satuan || "satuan",
+    id: snap.id,
+    customerNama: d.nama || "",
+    customerHp: d.hp || "-",
+    items: (d.items || []).map(it => ({
+      ...it,
       qty: Number(it.qty || 1),
-      panjang: it.panjang != null ? Number(it.panjang) : null,
-      lebar: it.lebar != null ? Number(it.lebar) : null,
-      luas: it.luas != null ? Number(it.luas) : null,
       harga: Number(it.harga || 0),
+      luas: it.luas != null ? Number(it.luas) : null,
       subtotal: Number(it.subtotal || 0),
     })),
-    total: Number(d.total_harga || d.total || 0),
-    subtotal: Number(d.subtotal_harga || d.total_harga || d.total || 0),
+    total: Number(d.total_harga || 0),
+    subtotal: Number(d.subtotal_harga || d.total_harga || 0),
     diskon: d.diskon || null,
-    metode: d.metode_pembayaran || d.metode || "",
+    dp: d.dp || null,
+    metode: d.metode_pembayaran || "",
     statusBayar: d.statusBayar || "Belum Lunas",
-    status: d.status || "Waiting List",
+    layananType: d.layanan_type || "laundry",
     tanggal: d.tanggal || "",
     timestamp: d.timestamp || d.created_at || null,
     catatan: d.catatan || "",
-    notaId: d.notaId || docSnap.id,
+    notaId: d.notaId || snap.id,
   };
 };
 
-function inferKategori(nama = "") {
+function inferKat(nama = "") {
   const n = nama.toLowerCase();
   if (n.includes("sofa")) return "Sofa";
   if (n.includes("springbed") || n.includes("kasur")) return "Springbed";
-  if (n.includes("karpet") || n.includes("gorden") || n.includes("tirai")) return "Karpet";
+  if (n.includes("karpet") || n.includes("gorden")) return "Karpet";
   return "Lainnya";
 }
 
-// ─── STEP INDICATOR ───────────────────────────────────────────────────────────
-const STEPS = ["Produk", "Customer", "Bayar", "Nota"];
-const STEP_ICONS = [Package, Users, CreditCard, FileText];
+// [FIX 🟢] Label "Tempo" (bukan "Belum Bayar") — muat di 4-kolom mobile
+const PAY_METHODS = [
+  { id: "Tunai", Icon: Banknote, sub: "Langsung", label: "Tunai" },
+  { id: "QRIS", Icon: QrCode, sub: "Scan QR", label: "QRIS" },
+  { id: "Transfer", Icon: Building2, sub: "Bank", label: "Transfer" },
+  { id: "Belum Bayar", Icon: Clock, sub: "Hutang", label: "Tempo" },
+];
 
-function StepBar({ current }) {
+// ─── SHARED UI ────────────────────────────────────────────────────────────────
+function SearchInput({ value, onChange, placeholder = "Cari...", autoFocus = false }) {
   return (
-    <div className="steps-bar">
-      {STEPS.map((s, i) => {
-        const Icon = STEP_ICONS[i];
-        return (
-          <div key={i} className="step-item">
-            <div className="step-wrapper">
-              <div className={`step-dot ${i < current ? "done" : i === current ? "active" : "pending"}`}>
-                {i < current
-                  ? <CheckCircle size={14} strokeWidth={2.5} />
-                  : i + 1
-                }
-              </div>
-              <div className="step-label">{s}</div>
-            </div>
-            {i < STEPS.length - 1 && <div className={`step-line ${i < current ? "done" : ""}`} />}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// ─── SEARCH INPUT ──────────────────────────────────────────────────────────────
-function SearchInput({ value, onChange, placeholder = "Cari..." }) {
-  return (
-    <div className="search-wrap">
-      <span className="search-icon-box">
-        <Search size={16} strokeWidth={2} />
-      </span>
+    <div className="s-wrap">
+      <span className="s-ico"><Search size={14} strokeWidth={2} /></span>
       <input
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
+        autoFocus={autoFocus}
       />
-      {value && (
-        <button className="search-clear-btn" onClick={() => onChange("")}>
-          <X size={14} strokeWidth={2.5} />
-        </button>
-      )}
+      {value && <button className="s-clr" onClick={() => onChange("")}><X size={12} /></button>}
     </div>
   );
 }
 
-// ─── STEP 1: PRODUK ───────────────────────────────────────────────────────────
-function StepProduk({ products, loadingProducts, cart, onCartChange, onNext }) {
-  const [search, setSearch] = useState("");
-  const [activeKat, setActiveKat] = useState("Semua");
+function HL({ text = "", query = "" }) {
+  if (!query) return <>{text}</>;
+  const i = text.toLowerCase().indexOf(query.toLowerCase());
+  if (i === -1) return <>{text}</>;
+  return <>{text.slice(0, i)}<mark className="hl">{text.slice(i, i + query.length)}</mark>{text.slice(i + query.length)}</>;
+}
 
-  const kategori = ["Semua", ...new Set(products.map((p) => p.kategori))];
-  const filtered = products.filter((p) => {
-    const matchKat = activeKat === "Semua" || p.kategori === activeKat;
-    const matchSearch = p.nama.toLowerCase().includes(search.toLowerCase());
-    return matchKat && matchSearch;
+function SummaryBar({ orders }) {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const todayOrders = orders.filter(o => {
+    const d = o.timestamp?.toDate ? o.timestamp.toDate() : new Date(o.tanggal || 0);
+    return d >= today;
   });
-
-  const addToCart = (prod) => {
-    const existing = cart.find((c) => c.produkId === prod.id);
-    if (existing) return;
-    onCartChange([...cart, {
-      produkId: prod.id, nama: prod.nama, satuan: prod.satuan, harga: prod.harga,
-      qty: 1, panjang: null, lebar: null,
-      luas: prod.satuan === "meter" ? "" : null,
-      subtotal: prod.satuan === "meter" ? 0 : prod.harga * 1,
-    }]);
+  const omzet = todayOrders.reduce((s, o) => s + o.total, 0);
+  const piutang = todayOrders.filter(o => !isStatusLunas(o.statusBayar)).reduce((s, o) => s + o.total, 0);
+  const fmtShort = (n) => {
+    if (n >= 1000000) return "Rp " + (n / 1000000).toFixed(1) + "jt";
+    if (n >= 1000) return "Rp " + (n / 1000).toFixed(0) + "rb";
+    return rp(n);
   };
-
-  const updateQty = (produkId, val) => {
-    if (val <= 0) {
-      onCartChange(cart.filter((c) => c.produkId !== produkId));
-    } else {
-      onCartChange(cart.map((c) => {
-        if (c.produkId !== produkId) return c;
-        return { ...c, qty: val, subtotal: c.harga * val };
-      }));
-    }
-  };
-
-  const updateLuas = (produkId, val) => {
-    const luas = val === "" ? "" : Math.max(0, parseFloat(val) || 0);
-    onCartChange(cart.map((c) => {
-      if (c.produkId !== produkId) return c;
-      return { ...c, luas, panjang: null, lebar: null, subtotal: c.harga * c.qty * (parseFloat(luas) || 0) };
-    }));
-  };
-
-  const total = cart.reduce((s, c) => s + c.subtotal, 0);
-  const cartValid = cart.length > 0 && cart.every(c => c.satuan !== 'meter' || (parseFloat(c.luas) || 0) > 0);
-
   return (
-    <div className="animate-in" style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <div className="step-content" style={{ flex: 1, paddingBottom: 0 }}>
-        <SearchInput value={search} onChange={setSearch} placeholder="Cari produk..." />
-
-        <div className="tab-chips">
-          {kategori.map((k) => (
-            <div key={k} className={`tab-chip ${activeKat === k ? "active" : ""}`} onClick={() => setActiveKat(k)}>
-              {k}
-            </div>
-          ))}
-        </div>
-
-        <div className="section-header">Pilih Produk</div>
-
-        {loadingProducts ? (
-          <div className="loading-screen">
-            <Loader2 size={24} className="spinning" color={C.primary} />
-            Memuat produk dari database...
-          </div>
-        ) : (
-          <>
-            {filtered.map((prod) => {
-              const inCart = cart.find((c) => c.produkId === prod.id);
-              return (
-                <div key={prod.id}>
-                  <div
-                    className={`prod-card ${inCart ? "selected" : ""}`}
-                    onClick={() => addToCart(prod)}
-                  >
-                    <div>
-                      <div className="prod-name">{prod.nama}</div>
-                      <div className="prod-type">
-                        <span className={`badge ${prod.satuan === "meter" ? "badge-meter" : "badge-unit"}`}>
-                          {prod.satuan === "meter"
-                            ? <><Ruler size={10} /> Meteran</>
-                            : <><Package size={10} /> Satuan</>
-                          }
-                        </span>
-                        {prod.kategori}
-                      </div>
-                    </div>
-                    <div style={{ textAlign: "right" }}>
-                      <div className="prod-price">{rupiah(prod.harga)}</div>
-                      <div className="prod-unit">{prod.unit_label}</div>
-                      {inCart && (
-                        <div className="badge badge-success" style={{ marginTop: 4 }}>
-                          <CheckCircle size={10} /> Dipilih
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {inCart && (
-                    <div className="cart-item fade-in" style={{ marginTop: -4, borderTopLeftRadius: 0, borderTopRightRadius: 0, borderTop: "none" }}>
-                      <div className="cart-item-header">
-                        <div>
-                          <div className="cart-item-name">{inCart.nama}</div>
-                          <div className="cart-item-sub">{rupiah(inCart.harga)}{prod.unit_label}</div>
-                        </div>
-                        <button
-                          className="btn btn-danger btn-sm"
-                          style={{ gap: 4 }}
-                          onClick={(e) => { e.stopPropagation(); onCartChange(cart.filter((c) => c.produkId !== prod.id)); }}
-                        >
-                          <Trash2 size={12} /> Hapus
-                        </button>
-                      </div>
-
-                      {inCart.satuan === "meter" && (
-                        <>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
-                            <button
-                              className="qty-btn"
-                              style={{ width: 36, height: 36, flexShrink: 0 }}
-                              onClick={(e) => { e.stopPropagation(); updateLuas(prod.id, Math.max(0, (parseFloat(inCart.luas) || 0) - 1)); }}
-                            >
-                              <Minus size={14} />
-                            </button>
-                            <input
-                              type="number"
-                              value={inCart.luas === "" || inCart.luas == null ? "" : inCart.luas}
-                              min="0" step="0.1" placeholder="Luas m²"
-                              style={{ flex: 1, textAlign: "center", fontWeight: 700, padding: "9px 8px", borderRadius: 10, border: `1.5px solid ${C.border}`, fontSize: 14, fontFamily: "inherit", outline: "none" }}
-                              onChange={(e) => { e.stopPropagation(); updateLuas(prod.id, e.target.value === "" ? "" : parseFloat(e.target.value) || 0); }}
-                              onClick={(e) => e.stopPropagation()}
-                            />
-                            <button
-                              className="qty-btn"
-                              style={{ width: 36, height: 36, flexShrink: 0 }}
-                              onClick={(e) => { e.stopPropagation(); updateLuas(prod.id, (parseFloat(inCart.luas) || 0) + 1); }}
-                            >
-                              <Plus size={14} />
-                            </button>
-                            <span style={{ fontSize: 11, color: C.muted, flexShrink: 0 }}>m²</span>
-                          </div>
-                          {(parseFloat(inCart.luas) || 0) > 0 && (
-                            <div className="meter-result" style={{ marginTop: 8 }}>
-                              <span className="meter-result-label" style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                                <Ruler size={12} /> {(parseFloat(inCart.luas) || 0).toFixed(2)} m² × {rupiah(inCart.harga)}/m²
-                              </span>
-                              <span className="meter-result-value">{rupiah(inCart.subtotal)}</span>
-                            </div>
-                          )}
-                        </>
-                      )}
-
-                      {inCart.satuan === "satuan" && (
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                          <div className="cart-item-controls" onClick={(e) => e.stopPropagation()}>
-                            <button className="qty-btn" onClick={() => updateQty(prod.id, inCart.qty - 1)}><Minus size={13} /></button>
-                            <span className="qty-display">{inCart.qty}</span>
-                            <button className="qty-btn" onClick={() => updateQty(prod.id, inCart.qty + 1)}><Plus size={13} /></button>
-                            <span style={{ fontSize: 11, color: C.muted }}>pcs</span>
-                          </div>
-                          <span style={{ fontFamily: "'Space Grotesk',sans-serif", fontWeight: 700, fontSize: 14, color: C.primary700 }}>
-                            {rupiah(inCart.subtotal)}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-            {filtered.length === 0 && !loadingProducts && (
-              <div className="empty-state">
-                <div className="empty-icon"><Search size={40} color={C.border} /></div>
-                <div className="empty-text">Produk tidak ditemukan</div>
-              </div>
-            )}
-          </>
-        )}
+    <div className="sum-bar">
+      <div className="sum-pill">
+        <div className="sum-pill-lbl">Transaksi</div>
+        <div className="sum-pill-val">{todayOrders.length}</div>
       </div>
-
-      <div className="footer-bar">
-        {cart.length > 0 && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <div className="footer-summary">
-              <div>
-                <div className="footer-label">{cart.length} item dipilih</div>
-                <div className="footer-total">{rupiah(total)}</div>
-              </div>
-              <div className="badge badge-primary">{cart.reduce((s, c) => s + c.qty, 0)} pcs/lot</div>
-            </div>
-            {cart.some((c) => c.satuan === "meter" && ((parseFloat(c.luas) || 0) === 0)) && (
-              <div style={{ background: C.dangerBg, border: `1px solid ${C.danger}`, borderRadius: 8, padding: "8px 12px", fontSize: 12, color: C.danger, display: "flex", alignItems: "center", gap: 6 }}>
-                <AlertCircle size={14} /> Luas karpet wajib diisi sebelum lanjut
-              </div>
-            )}
-          </div>
-        )}
-        <button className="btn btn-primary btn-full" disabled={!cartValid} onClick={onNext}>
-          Lanjut ke Customer <ChevronRight size={16} />
-        </button>
+      <div className="sum-pill">
+        <div className="sum-pill-lbl">Omzet</div>
+        <div className="sum-pill-val">{fmtShort(omzet)}</div>
+      </div>
+      <div className={`sum-pill ${piutang > 0 ? "red" : ""}`}>
+        <div className="sum-pill-lbl">Piutang</div>
+        <div className="sum-pill-val">{fmtShort(piutang)}</div>
       </div>
     </div>
   );
 }
 
-// ─── CUSTOMER PICKER MODAL ────────────────────────────────────────────────────
-function CustomerPickerModal({ customers = [], loadingCustomers, selectedCust, onSelect, onClose }) {
-  const [search, setSearch] = useState("");
-  const inputRef = useRef(null);
-
-  useEffect(() => { setTimeout(() => inputRef.current?.focus(), 50); }, []);
-
-  const filtered = customers
-    .filter((c) => c.nama && c.nama !== "(Tanpa Nama)" || c.hp)
-    .filter((c) => !search || c.nama.toLowerCase().includes(search.toLowerCase()) || c.hp.includes(search));
-
+// ─── KONFIRMASI LUNAS MODAL ───────────────────────────────────────────────────
+// [FIX 🟡] Ganti window.confirm dengan modal yang proper
+function KonfirmasiLunasModal({ order, onConfirm, onClose, loading }) {
   return (
-    <div
-      style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(26,46,53,0.55)", display: "flex", flexDirection: "column", justifyContent: "flex-end" }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div style={{ background: C.white, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: "82vh", display: "flex", flexDirection: "column", overflow: "hidden", animation: "slideUp .25s ease-out" }}>
-        <div style={{ padding: "16px 20px 12px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
-          <div>
-            <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 16, fontWeight: 700, color: C.dark }}>Pilih Customer</div>
-            <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
-              {customers.filter(c => c.nama && c.nama !== "(Tanpa Nama)" || c.hp).length} customer terdaftar
-            </div>
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-sheet" onClick={e => e.stopPropagation()}>
+        <div style={{ textAlign: "center", padding: "8px 0 16px" }}>
+          <div style={{ width: 50, height: 50, background: C.okBg, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px" }}>
+            <CheckCircle size={24} color={C.ok} />
           </div>
-          <button onClick={onClose} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, width: 32, height: 32, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: C.muted }}>
-            <X size={16} />
-          </button>
+          <div style={{ fontSize: 15, fontWeight: 800, color: C.dark, marginBottom: 6 }}>Tandai Lunas?</div>
+          <div style={{ fontSize: 12, color: C.muted, marginBottom: 2 }}>
+            <strong style={{ color: C.dark }}>{order.notaId}</strong>
+          </div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: C.dark }}>{order.customerNama}</div>
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.p700, marginTop: 6 }}>{rp(order.total)}</div>
+          <div style={{ fontSize: 11, color: C.muted, marginTop: 8 }}>
+            Status akan diubah ke <strong>Lunas</strong>. Tindakan ini tidak bisa dibatalkan.
+          </div>
         </div>
-
-        <div style={{ padding: "12px 20px 0", flexShrink: 0 }}>
-          {/* Menggunakan div wrapper agar ref bisa dipakai manual */}
-          <div className="search-wrap" style={{ marginBottom: 0 }}>
-            <span className="search-icon-box"><Search size={16} strokeWidth={2} /></span>
-            <input
-              ref={inputRef}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Cari nama atau nomor HP..."
-            />
-            {search && (
-              <button className="search-clear-btn" onClick={() => setSearch("")}>
-                <X size={14} strokeWidth={2.5} />
-              </button>
-            )}
-          </div>
-          {search && (
-            <div style={{ fontSize: 11, color: C.muted, margin: "8px 0 0", paddingBottom: 8 }}>
-              {filtered.length} hasil untuk "{search}"
-            </div>
-          )}
-        </div>
-
-        <div style={{ overflowY: "auto", flex: 1, padding: "12px 20px 24px" }}>
-          {loadingCustomers ? (
-            <div className="loading-screen">
-              <Loader2 size={24} className="spinning" color={C.primary} />
-              Memuat data customer...
-            </div>
-          ) : filtered.length === 0 ? (
-            <div className="empty-state">
-              <div className="empty-icon"><Users size={40} color={C.border} /></div>
-              <div className="empty-text">{search ? `Tidak ada customer "${search}"` : "Belum ada customer"}</div>
-            </div>
-          ) : (
-            filtered.map((c) => (
-              <div key={c.id} className={`cust-card ${selectedCust?.id === c.id ? "selected" : ""}`} onClick={() => { onSelect(c); onClose(); }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div>
-                    <div className="cust-name">{c.nama}</div>
-                    <div className="cust-phone"><Phone size={11} /> {c.hp || "-"}</div>
-                  </div>
-                  {selectedCust?.id === c.id
-                    ? <div className="badge badge-success"><CheckCircle size={10} /> Dipilih</div>
-                    : <ChevronRight size={18} color={C.border} />
-                  }
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── STEP 2: CUSTOMER ─────────────────────────────────────────────────────────
-function StepCustomer({ customers = [], loadingCustomers, onAddCustomer, selectedCust, onSelect, cart = [], onCartChange, onNext, onBack }) {
-  const [showPicker, setShowPicker] = useState(false);
-  const [mode, setMode] = useState("main");
-  const [form, setForm] = useState({ nama: "", hp: "" });
-  const [err, setErr] = useState({});
-  const [saving, setSaving] = useState(false);
-
-  const handleAdd = async () => {
-    const e = {};
-    if (!form.nama.trim()) e.nama = "Nama wajib diisi";
-    if (!form.hp.trim()) e.hp = "Nomor HP wajib diisi";
-    if (Object.keys(e).length) { setErr(e); return; }
-    setSaving(true);
-    try {
-      const newCust = await onAddCustomer({ nama: form.nama.trim(), hp: form.hp.trim() });
-      onSelect(newCust);
-      setMode("main");
-      setForm({ nama: "", hp: "" });
-    } catch (err) {
-      console.error("Gagal simpan customer:", err);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const cartValid = selectedCust && cart.length > 0;
-
-  return (
-    <div className="animate-in" style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      {showPicker && (
-        <CustomerPickerModal customers={customers} loadingCustomers={loadingCustomers} selectedCust={selectedCust} onSelect={onSelect} onClose={() => setShowPicker(false)} />
-      )}
-
-      <div className="step-content" style={{ flex: 1 }}>
-        {mode === "main" && (
-          <>
-            <div className="section-header">Customer</div>
-            <div
-              onClick={() => setShowPicker(true)}
-              style={{ border: `2px dashed ${selectedCust ? C.primary : C.border}`, borderRadius: 14, padding: "18px 20px", cursor: "pointer", background: selectedCust ? C.primary50 : C.surface, display: "flex", alignItems: "center", gap: 14, marginBottom: 12, transition: "all .15s" }}
-            >
-              <div style={{ width: 44, height: 44, borderRadius: "50%", flexShrink: 0, background: selectedCust ? C.primary200 : C.border, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <Users size={20} color={selectedCust ? C.primary700 : C.muted} />
-              </div>
-              <div style={{ flex: 1 }}>
-                {selectedCust ? (
-                  <>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: C.dark }}>{selectedCust.nama}</div>
-                    <div style={{ fontSize: 12, color: C.muted, marginTop: 2, display: "flex", alignItems: "center", gap: 4 }}>
-                      <Phone size={11} /> {selectedCust.hp || "-"}
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: C.darkMid }}>Pilih dari Daftar Customer</div>
-                    <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
-                      {loadingCustomers ? "Memuat..." : `${customers.filter(c => c.nama && c.nama !== "(Tanpa Nama)" || c.hp).length} customer tersedia`}
-                    </div>
-                  </>
-                )}
-              </div>
-              <ChevronRight size={18} color={selectedCust ? C.primary : C.muted} />
-            </div>
-
-            {selectedCust && (
-              <button className="btn btn-secondary btn-sm" style={{ marginBottom: 16 }} onClick={() => onSelect(null)}>
-                <X size={12} /> Ganti Customer
-              </button>
-            )}
-
-            <div className="or-divider">atau</div>
-            <button className="btn btn-ghost btn-full" style={{ marginTop: 4, marginBottom: 24 }} onClick={() => setMode("add")}>
-              <Plus size={16} /> Tambah Customer Baru
-            </button>
-
-            <div className="section-header">Jumlah Item</div>
-            <div style={{ background: C.primary50, border: `1px solid ${C.primary200}`, borderRadius: 10, padding: "10px 14px", fontSize: 12, color: C.primary700, marginBottom: 14, display: "flex", alignItems: "center", gap: 6 }}>
-              <AlertCircle size={14} /> Khusus karpet, ukuran bisa diisi estimasi dahulu dan diupdate setelah pengukuran.
-            </div>
-
-            {cart.map((item) => (
-              <div key={item.produkId} style={{ border: `1.5px solid ${C.border}`, borderRadius: 12, padding: "12px 14px", marginBottom: 8, background: C.white }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: C.dark }}>{item.nama}</div>
-                    <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
-                      {item.satuan === "meter"
-                        ? `${(parseFloat(item.luas) || 0).toFixed(2)} m² · ${rupiah(item.subtotal)}`
-                        : `${rupiah(item.harga)}/pcs · ${item.qty} pcs`}
-                    </div>
-                  </div>
-                  <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontWeight: 700, fontSize: 14, color: C.primary700 }}>
-                    {item.satuan === "meter" ? `${(parseFloat(item.luas) || 0).toFixed(1)} m²` : `×${item.qty}`}
-                  </div>
-                </div>
-              </div>
-            ))}
-
-            {cart.length === 0 && (
-              <div className="empty-state" style={{ padding: "20px 0" }}>
-                <div className="empty-icon"><ShoppingCart size={40} color={C.border} /></div>
-                <div className="empty-text">Belum ada item dipilih di step sebelumnya</div>
-              </div>
-            )}
-          </>
-        )}
-
-        {mode === "add" && (
-          <div className="fade-in">
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
-              <button className="btn btn-secondary btn-sm" onClick={() => setMode("main")}><ArrowLeft size={14} /> Kembali</button>
-              <div className="section-header" style={{ margin: 0, flex: 1 }}>Customer Baru</div>
-            </div>
-            <div className="field">
-              <label>Nama Customer</label>
-              <input placeholder="Masukkan nama lengkap" value={form.nama} autoFocus
-                onChange={(e) => { setForm({ ...form, nama: e.target.value }); setErr({ ...err, nama: "" }); }} />
-              {err.nama && <div style={{ color: C.danger, fontSize: 11, marginTop: 4, display: "flex", alignItems: "center", gap: 4 }}><AlertCircle size={12} />{err.nama}</div>}
-            </div>
-            <div className="field">
-              <label>Nomor HP / WhatsApp</label>
-              <input placeholder="08xxxxxxxxxx" value={form.hp} type="tel"
-                onChange={(e) => { setForm({ ...form, hp: e.target.value }); setErr({ ...err, hp: "" }); }} />
-              {err.hp && <div style={{ color: C.danger, fontSize: 11, marginTop: 4, display: "flex", alignItems: "center", gap: 4 }}><AlertCircle size={12} />{err.hp}</div>}
-            </div>
-            <button className="btn btn-primary btn-full" onClick={handleAdd} disabled={saving} style={{ marginTop: 8 }}>
-              {saving ? <><Loader2 size={16} className="spinning" /> Menyimpan...</> : "Simpan & Pilih Customer"}
-            </button>
-          </div>
-        )}
-      </div>
-
-      <div className="footer-bar">
-        {!cartValid && (
-          <div style={{ background: C.warningBg, border: `1px solid ${C.warning}`, borderRadius: 10, padding: "10px 14px", fontSize: 12, color: "#92400E", display: "flex", alignItems: "center", gap: 6 }}>
-            <AlertCircle size={14} /> {!selectedCust ? "Pilih customer terlebih dahulu" : "Tidak ada item di cart"}
-          </div>
-        )}
-        {cartValid && (
-          <div style={{ background: C.successBg, border: `1px solid ${C.success}`, borderRadius: 10, padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div>
-              <div style={{ fontSize: 11, color: "#15803D", fontWeight: 700, textTransform: "uppercase", display: "flex", alignItems: "center", gap: 4 }}>
-                <CheckCircle size={12} /> Siap dilanjutkan
-              </div>
-              <div style={{ fontSize: 14, color: C.dark, fontWeight: 700 }}>{selectedCust.nama}</div>
-              <div style={{ fontSize: 12, color: C.muted }}>{cart.reduce((s, c) => s + c.qty, 0)} item</div>
-            </div>
-          </div>
-        )}
-        <div style={{ display: "flex", gap: 10 }}>
-          <button className="btn btn-secondary" style={{ width: 80 }} onClick={onBack}><ArrowLeft size={14} /> Back</button>
-          <button className="btn btn-primary" style={{ flex: 1 }} disabled={!cartValid} onClick={onNext}>
-            Lanjut ke Pembayaran <ChevronRight size={16} />
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="btn btn-s" style={{ flex: 1 }} onClick={onClose} disabled={loading}>Batal</button>
+          <button className="btn btn-p" style={{ flex: 1, background: C.ok }} onClick={onConfirm} disabled={loading}>
+            {loading ? <><Loader2 size={14} className="spin" /> Memproses...</> : <><CheckCircle size={14} /> Tandai Lunas</>}
           </button>
         </div>
       </div>
@@ -877,250 +461,60 @@ function StepCustomer({ customers = [], loadingCustomers, onAddCustomer, selecte
   );
 }
 
-// ─── STEP 3: PEMBAYARAN ───────────────────────────────────────────────────────
-function StepPembayaran({ cart, customer, payMethod, setPayMethod, catatan, setCatatan, onNext, onBack, saving }) {
-  const [diskonType, setDiskonType] = useState("persen");
-  const [diskonVal, setDiskonVal] = useState("");
-  const [isHomeVisit, setIsHomeVisit] = useState(false);   // ← BARU
-
-  const subtotal = cart.reduce((s, c) => s + c.subtotal, 0);
-  const diskonAmount = diskonType === "persen"
-    ? Math.round(subtotal * (parseFloat(diskonVal) || 0) / 100)
-    : Math.min(parseFloat(diskonVal) || 0, subtotal);
-  const total = subtotal - diskonAmount;
-
-  // Kirim isHomeVisit ke parent lewat onNext
-  const handleNext = () =>
-    onNext({ diskonType, diskonVal: parseFloat(diskonVal) || 0, diskonAmount, isHomeVisit });
+// ─── KONFIRMASI PEMBAYARAN MODAL ───────────────────────────────────────────────────
+function KonfirmasiPembayaranModal({ order, onConfirm, onClose, loading }) {
+  const [catatan, setCatatan] = useState("");
+  const now = new Date();
+  const timestamp = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")} · ${fmtIndo(now)}`;
 
   return (
-    <div className="animate-in" style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <div className="step-content" style={{ flex: 1 }}>
-
-        {/* ── TIPE LAYANAN TOGGLE ─────────────────────────────────────────── */}
-        <div className="section-header">Tipe Layanan</div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 20 }}>
-          {/* Laundry biasa */}
-          <div
-            onClick={() => setIsHomeVisit(false)}
-            style={{
-              border: `2px solid ${!isHomeVisit ? C.primary : C.border}`,
-              borderRadius: 14,
-              padding: "14px 12px",
-              cursor: "pointer",
-              background: !isHomeVisit ? C.primary100 : C.white,
-              textAlign: "center",
-              transition: "all .15s",
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}>
-              {/* pakai icon WashingMachine — import dari lucide kalau belum ada */}
-              <Layers size={24} color={!isHomeVisit ? C.primary700 : C.muted} />
-            </div>
-            <div style={{ fontSize: 13, fontWeight: 800, color: !isHomeVisit ? C.primary700 : C.dark }}>
-              Laundry
-            </div>
-            <div style={{ fontSize: 10, color: !isHomeVisit ? C.primary700 : C.muted, marginTop: 3 }}>
-              Antar ke toko
-            </div>
-            {!isHomeVisit && (
-              <div style={{ marginTop: 6, display: "flex", justifyContent: "center" }}>
-                <CheckCircle size={14} color={C.primary} />
-              </div>
-            )}
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-sheet" onClick={e => e.stopPropagation()}>
+        <div style={{ textAlign: "center", padding: "8px 0 14px" }}>
+          <div style={{ width: 50, height: 50, background: C.blueBg, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px" }}>
+            {order.metode === "QRIS" ? <QrCode size={22} color={C.blue} /> : <Building2 size={22} color={C.blue} />}
           </div>
-
-          {/* Home Visit */}
-          <div
-            onClick={() => setIsHomeVisit(true)}
-            style={{
-              border: `2px solid ${isHomeVisit ? "#F59E0B" : C.border}`,
-              borderRadius: 14,
-              padding: "14px 12px",
-              cursor: "pointer",
-              background: isHomeVisit ? "#FEF3C7" : C.white,
-              textAlign: "center",
-              transition: "all .15s",
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}>
-              <Home size={24} color={isHomeVisit ? "#D97706" : C.muted} />
-            </div>
-            <div style={{ fontSize: 13, fontWeight: 800, color: isHomeVisit ? "#92400E" : C.dark }}>
-              Home Visit
-            </div>
-            <div style={{ fontSize: 10, color: isHomeVisit ? "#D97706" : C.muted, marginTop: 3 }}>
-              Cuci di tempat
-            </div>
-            {isHomeVisit && (
-              <div style={{ marginTop: 6, display: "flex", justifyContent: "center" }}>
-                <CheckCircle size={14} color="#D97706" />
-              </div>
-            )}
+          <div style={{ fontSize: 15, fontWeight: 800, color: C.dark, marginBottom: 6 }}>
+            Konfirmasi Pembayaran {order.metode}
+          </div>
+          <div style={{ fontSize: 12, color: C.muted, marginBottom: 2 }}>
+            <strong style={{ color: C.dark }}>{order.notaId}</strong>
+          </div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: C.dark }}>{order.customerNama}</div>
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.p700, marginTop: 6 }}>{rp(order.total)}</div>
+          <div style={{ fontSize: 10, color: C.muted, marginTop: 6, display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
+            <Clock size={10} /> Dikonfirmasi: {timestamp}
           </div>
         </div>
 
-        {/* Banner info jika Home Visit */}
-        {isHomeVisit && (
-          <div style={{
-            background: "#FEF3C7",
-            border: "1px solid #FCD34D",
-            borderRadius: 10,
-            padding: "10px 14px",
-            marginBottom: 16,
-            display: "flex",
-            alignItems: "flex-start",
-            gap: 8,
-            fontSize: 12,
-            color: "#92400E",
-            fontWeight: 600,
-          }}>
-            <AlertCircle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
-            <span>
-              Transaksi <strong>Home Visit</strong> langsung selesai — tidak masuk antrian cuci
-              dan tidak tampil di halaman tracking pelanggan.
-            </span>
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 6 }}>
+            Catatan Konfirmasi <span style={{ fontWeight: 400, textTransform: "none" }}>(opsional)</span>
           </div>
-        )}
-
-        {/* ── RINGKASAN ORDER ─────────────────────────────────────────────── */}
-        <div className="section-header">Ringkasan Order</div>
-        <div className="nota-card" style={{ marginBottom: 20 }}>
-          <div style={{ padding: "14px 16px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: C.dark }}>{customer?.nama}</span>
-              <span style={{ fontSize: 12, color: C.muted }}>{customer?.hp}</span>
-            </div>
-            <div className="nota-divider" />
-            {cart.map((item, i) => (
-              <div key={i} className="nota-item-row" style={{ flexDirection: "column", alignItems: "flex-start", gap: 2 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", width: "100%" }}>
-                  <span className="nota-item-name" style={{ fontWeight: 600 }}>{item.nama}</span>
-                  <span className="nota-item-price">{rupiah(item.subtotal)}</span>
-                </div>
-                {item.satuan === "meter" ? (
-                  <span style={{ fontSize: 11, color: C.muted }}>
-                    {(parseFloat(item.luas) || 0).toFixed(2)} m² × {rupiah(item.harga)}/m²
-                  </span>
-                ) : (
-                  <span style={{ fontSize: 11, color: C.muted }}>
-                    {item.qty} pcs × {rupiah(item.harga)}
-                  </span>
-                )}
-              </div>
-            ))}
-            <div className="nota-total-row">
-              <span className="nota-total-label">Total</span>
-              <span className="nota-total-val">{rupiah(total)}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* ── DISKON ──────────────────────────────────────────────────────── */}
-        <div className="section-header">Diskon (Opsional)</div>
-        <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-          {["persen", "nominal"].map(t => (
-            <button
-              key={t}
-              className={`btn btn-sm ${diskonType === t ? "btn-primary" : "btn-secondary"}`}
-              style={{ flex: 1 }}
-              onClick={() => { setDiskonType(t); setDiskonVal(""); }}
-            >
-              {t === "persen" ? "% Persen" : "Rp Nominal"}
-            </button>
-          ))}
-        </div>
-        <div className="field">
           <input
-            type="number"
-            placeholder={diskonType === "persen" ? "Contoh: 10 (artinya 10%)" : "Contoh: 50000"}
-            value={diskonVal}
-            min="0"
-            max={diskonType === "persen" ? 100 : subtotal}
-            onChange={(e) => setDiskonVal(e.target.value)}
-          />
-          {diskonAmount > 0 && (
-            <div style={{ marginTop: 6, fontSize: 12, color: C.success, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
-              <CheckCircle size={12} /> Hemat {rupiah(diskonAmount)}{diskonType === "persen" ? ` (${diskonVal}%)` : ""}
-            </div>
-          )}
-        </div>
-
-        {/* ── METODE PEMBAYARAN ────────────────────────────────────────────── */}
-        <div className="section-header">Metode Pembayaran</div>
-        <div className="pay-grid">
-          {PAY_METHODS.map((m) => {
-            const Icon = m.Icon;
-            return (
-              <div
-                key={m.id}
-                className={`pay-option ${payMethod === m.id ? "selected" : ""}`}
-                onClick={() => setPayMethod(m.id)}
-              >
-                <div className="pay-option-icon"><Icon size={24} /></div>
-                <div className="pay-option-name">{m.label}</div>
-                <div className="pay-option-sub">{m.sub}</div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* ── CATATAN ──────────────────────────────────────────────────────── */}
-        <div className="field" style={{ marginTop: 16 }}>
-          <label>Catatan (opsional)</label>
-          <input
-            placeholder="Mis: antar jam 10, waiting list, dll"
+            className="inp"
+            placeholder="cth: sudah masuk rek BCA, bukti dikirim WA..."
             value={catatan}
-            onChange={(e) => setCatatan(e.target.value)}
+            onChange={e => setCatatan(e.target.value)}
+            autoFocus
           />
         </div>
-      </div>
 
-      {/* ── FOOTER ───────────────────────────────────────────────────────────── */}
-      <div className="footer-bar">
-        <div className="footer-summary">
-          <div>
-            <div className="footer-label">
-              {diskonAmount > 0
-                ? <span>Subtotal <span style={{ textDecoration: "line-through", color: C.muted }}>{rupiah(subtotal)}</span></span>
-                : "Total Tagihan"}
-            </div>
-            <div className="footer-total">{rupiah(total)}</div>
-            {diskonAmount > 0 && (
-              <div style={{ fontSize: 11, color: C.success }}>Diskon: −{rupiah(diskonAmount)}</div>
-            )}
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
-            {payMethod && (
-              <div className="badge badge-primary">
-                {PAY_METHODS.find((m) => m.id === payMethod)?.label}
-              </div>
-            )}
-            {isHomeVisit && (
-              <div style={{
-                background: "#FEF3C7", color: "#92400E",
-                fontSize: 10, fontWeight: 700, padding: "3px 8px",
-                borderRadius: 6, border: "1px solid #FCD34D",
-                display: "flex", alignItems: "center", gap: 4,
-              }}>
-                <Home size={10} /> Home Visit
-              </div>
-            )}
-          </div>
+        <div style={{ background: C.blueBg, border: `1px solid ${C.blue}`, borderRadius: 8, padding: "8px 11px", fontSize: 11, color: C.blueTx, marginBottom: 14, display: "flex", alignItems: "center", gap: 5 }}>
+          <CheckCircle size={12} /> Status akan diubah ke <strong>Lunas</strong>
         </div>
-        <div style={{ display: "flex", gap: 10 }}>
-          <button className="btn btn-secondary" style={{ width: 80 }} onClick={onBack}>
-            <ArrowLeft size={14} /> Back
-          </button>
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="btn btn-s" style={{ flex: 1 }} onClick={onClose} disabled={loading}>Batal</button>
           <button
-            className="btn btn-primary"
-            style={{ flex: 1 }}
-            disabled={!payMethod || saving}
-            onClick={handleNext}
+            className="btn btn-p"
+            style={{ flex: 1, background: C.blue }}
+            onClick={() => onConfirm(catatan)}
+            disabled={loading}
           >
-            {saving
-              ? <><Loader2 size={16} className="spinning" /> Menyimpan...</>
-              : <><CheckCircle size={16} /> Simpan Transaksi</>
+            {loading
+              ? <><Loader2 size={14} className="spin" /> Memproses...</>
+              : <><CheckCircle size={14} /> Konfirmasi Lunas</>
             }
           </button>
         </div>
@@ -1129,11 +523,651 @@ function StepPembayaran({ cart, customer, payMethod, setPayMethod, catatan, setC
   );
 }
 
-// ─── STEP 4: SUKSES + NOTA ────────────────────────────────────────────────────
+// ─── KALKULATOR P×L ──────────────────────────────────────────────────────────
+// [FIX 🔴] onLuasChange ada di dependency array
+// [FIX 🟡] initialPanjang/initialLebar dari parent → state tidak reset saat re-render
+function KalkulatorPxL({ harga, onLuasChange, autoFocus, initialPanjang = "", initialLebar = "" }) {
+  const [panjang, setPanjang] = useState(initialPanjang);
+  const [lebar, setLebar] = useState(initialLebar);
+
+  // Hitung nilai saat ini berdasarkan state lokal
+  const p = parseFloat(panjang) || 0;
+  const l = parseFloat(lebar) || 0;
+  const luas = p * l;
+  const subtotal = luas * harga;
+
+  // Fungsi untuk update data ke parent secara langsung
+  const handleUpdate = (newP, newL) => {
+    const valP = parseFloat(newP) || 0;
+    const valL = parseFloat(newL) || 0;
+    const newLuas = valP * valL;
+
+    // Kirim data ke parent hanya saat user berinteraksi
+    onLuasChange(newLuas > 0 ? newLuas : "", newP, newL);
+  };
+
+  return (
+    <div className="pxl-wrap fade">
+      <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 6 }}>
+        Kalkulator Luas (P × L)
+      </div>
+      <div className="pxl-row">
+        <input
+          type="number" min="0" step="0.1" placeholder="Panjang"
+          value={panjang}
+          onChange={e => {
+            setPanjang(e.target.value);
+            handleUpdate(e.target.value, lebar);
+          }}
+          className="pxl-inp" autoFocus={autoFocus}
+          style={{ borderColor: panjang ? C.primary : undefined }}
+        />
+        <span style={{ fontSize: 12, fontWeight: 700, color: C.muted }}>×</span>
+        <input
+          type="number" min="0" step="0.1" placeholder="Lebar"
+          value={lebar}
+          onChange={e => {
+            setLebar(e.target.value);
+            handleUpdate(panjang, e.target.value);
+          }}
+          className="pxl-inp"
+          style={{ borderColor: lebar ? C.primary : undefined }}
+        />
+        <span style={{ fontSize: 11, color: C.muted, flexShrink: 0, whiteSpace: "nowrap" }}>m²</span>
+      </div>
+
+      {luas > 0 && (
+        <div className="pxl-result">
+          <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <CheckCircle size={11} color={C.ok} />
+            {luas.toFixed(2)} m² × {rp(harga)}/m²
+          </span>
+          <span style={{ fontSize: 13, fontWeight: 800, color: C.p700 }}>{rp(subtotal)}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── STEP 1 ───────────────────────────────────────────────────────────────────
+function Step1({
+  products, loadingProducts, customers, loadingCustomers,
+  cart, setCart, customer, setCustomer, svcType, setSvcType,
+  onAddCustomer, lastCustomer, onNext,
+}) {
+  const [search, setSearch] = useState("");
+  const [kat, setKat] = useState("Semua");
+  const [custSearch, setCustSearch] = useState("");
+  const [newCust, setNewCust] = useState({ nama: "", hp: "" });
+  const [saving, setSaving] = useState(false);
+  const [custMode, setCustMode] = useState(false); // false | true
+
+
+  // [FIX 🟡] cartDims menyimpan {panjang, lebar} per cartKey
+  // Ini memastikan state KalkulatorPxL tidak hilang saat cart berubah
+  const [cartDims, setCartDims] = useState({});
+
+  const kategori = ["Semua", ...new Set(products.map(p => p.kategori))];
+  const filtered = products.filter(p => {
+    const mk = kat === "Semua" || p.kategori === kat;
+    const ms = p.nama.toLowerCase().includes(search.toLowerCase());
+    return mk && ms;
+  });
+
+  const addEntry = (prod) => {
+    const cartKey = genCartKey();
+    setCart(prev => [...prev, {
+      cartKey,
+      produkId: prod.id,
+      nama: prod.nama,
+      satuan: prod.satuan,
+      harga: prod.harga,
+      qty: 1,
+      luas: prod.satuan === "meter" ? "" : null,
+      subtotal: prod.satuan === "meter" ? 0 : prod.harga,
+    }]);
+  };
+
+  const removeEntry = (cartKey) => {
+    setCart(prev => prev.filter(c => c.cartKey !== cartKey));
+    setCartDims(prev => { const n = { ...prev }; delete n[cartKey]; return n; });
+  };
+
+  const updateQty = (cartKey, val) => {
+    if (val <= 0) { removeEntry(cartKey); return; }
+    setCart(prev => prev.map(c => c.cartKey !== cartKey ? c : {
+      ...c, qty: val, subtotal: c.harga * val,
+    }));
+  };
+
+  // [FIX 🔴] onLuasChange dibungkus useCallback agar stable reference
+  // sekarang terima panjang/lebar juga untuk disimpan di cartDims
+  const updateLuas = useCallback((cartKey) => (luas, panjang, lebar) => {
+    setCart(prev => prev.map(c => c.cartKey !== cartKey ? c : {
+      ...c, luas, subtotal: c.harga * (parseFloat(luas) || 0),
+    }));
+    setCartDims(prev => ({ ...prev, [cartKey]: { panjang: panjang ?? "", lebar: lebar ?? "" } }));
+  }, []);
+
+  const cartWithLabels = addItemLabels(cart);
+  const total = cart.reduce((s, c) => s + c.subtotal, 0);
+  const luasOk = cart.every(c => c.satuan !== "meter" || (parseFloat(c.luas) || 0) > 0);
+  const canNext = cart.length > 0 && luasOk && !!customer;
+
+  const filteredCusts = customers.filter(c =>
+    !custSearch || c.nama.toLowerCase().includes(custSearch.toLowerCase()) || c.hp.includes(custSearch)
+  );
+
+  const handleAddCust = async () => {
+  if (!newCust.nama.trim() || !newCust.hp.trim()) return;
+  setSaving(true);
+  try {
+    const cust = await onAddCustomer(newCust);
+    setCustomer(cust);
+    setCustMode(false);
+    setCustSearch("");
+    setNewCust({ nama: "", hp: "" });
+  } finally { setSaving(false); }
+};
+
+  const prodIdsInCart = new Set(cart.map(c => c.produkId));
+
+  return (
+    <div className="ani" style={{ display: "flex", flexDirection: "column", flex: 1 }}>
+      <div className="sc" style={{ paddingBottom: 0 }}>
+        {/* Tipe layanan */}
+        <div className="sec">Tipe Layanan</div>
+        <div className="svc-toggle">
+          {[
+            { val: "workshop", cls: "ws", Icon: Package, label: "Workshop", sub: "Antar ke toko" },
+            { val: "homeservice", cls: "hs", Icon: Home, label: "Home Service", sub: "Cuci di rumah" },
+          ].map(opt => (
+            <div key={opt.val} className={`svc-opt ${opt.cls} ${svcType === opt.val ? "active" : ""}`} onClick={() => setSvcType(opt.val)}>
+              {svcType === opt.val && (
+                <div className="svc-check"><CheckCircle size={10} color="white" strokeWidth={3} /></div>
+              )}
+              <opt.Icon size={22} color={svcType === opt.val ? (opt.val === "homeservice" ? C.amber : C.primary) : C.muted} />
+              <div className="svc-name">{opt.label}</div>
+              <div className="svc-sub">{opt.sub}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Customer */}
+        <div className="sec">Customer</div>
+        {lastCustomer && !customer && (
+          <div className="last-cust" onClick={() => setCustomer(lastCustomer)}>
+            <div style={{ width: 30, height: 30, borderRadius: "50%", background: C.p600, display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
+              {initials(lastCustomer.nama)}
+            </div>
+            <div style={{ flex: 1 }}>
+              <div className="last-lbl"><Star size={9} /> Pelanggan terakhir</div>
+              <div className="last-name">{lastCustomer.nama}</div>
+              <div className="last-hp">{lastCustomer.hp || "-"}</div>
+            </div>
+            <ChevronRight size={14} color={C.primary} />
+          </div>
+        )}
+
+        <div className={`cust-sel ${customer ? "has" : ""}`} onClick={() => { if (!customer) setCustMode(true); }}>
+          <div className="cust-av">{customer ? initials(customer.nama) : "?"}</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: customer ? C.dark : C.muted }}>
+              {customer ? customer.nama : "Pilih customer"}
+            </div>
+            {customer
+              ? <div style={{ fontSize: 11, color: C.muted, display: "flex", alignItems: "center", gap: 3 }}><Phone size={10} /> {customer.hp || "-"}</div>
+              : <div style={{ fontSize: 11, color: C.muted }}>{loadingCustomers ? "Memuat..." : `${customers.length} tersedia`}</div>
+            }
+          </div>
+          {customer
+            ? <button className="btn btn-sm btn-red" style={{ flexShrink: 0 }} onClick={e => { e.stopPropagation(); setCustomer(null); }}>Ganti</button>
+            : <ChevronRight size={14} color={C.muted} />}
+        </div>
+
+        {custMode && !customer && (
+          <div className="modal-overlay" onClick={() => setCustMode(false)}>
+            <div className="modal-sheet" onClick={e => e.stopPropagation()}>
+
+              {/* Header */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                <div style={{ fontSize: 14, fontWeight: 800, color: C.dark }}>Pilih Customer</div>
+                <button onClick={() => setCustMode(false)} style={{ background: "none", border: "none", cursor: "pointer", color: C.muted }}>
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Search */}
+              <SearchInput value={custSearch} onChange={setCustSearch} placeholder="Cari nama atau HP..." autoFocus />
+
+              {/* List */}
+              <div style={{ maxHeight: 220, overflowY: "auto", margin: "0 -16px", padding: "0 16px" }}>
+                {filteredCusts.length === 0
+                  ? <div style={{ textAlign: "center", padding: "12px 0", color: C.muted, fontSize: 12 }}>Tidak ditemukan</div>
+                  : filteredCusts.map(c => (
+                    <div key={c.id}
+                      style={{ padding: "10px 0", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}
+                      onClick={() => { setCustomer(c); setCustMode(false); setCustSearch(""); }}
+                    >
+                      <div style={{ width: 32, height: 32, borderRadius: "50%", background: C.p100, display: "flex", alignItems: "center", justifyContent: "center", color: C.p700, fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
+                        {initials(c.nama)}
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 600 }}><HL text={c.nama} query={custSearch} /></div>
+                        <div style={{ fontSize: 10, color: C.muted }}>{c.hp}</div>
+                      </div>
+                    </div>
+                  ))
+                }
+              </div>
+
+              {/* Form tambah baru — compact 1 baris */}
+              <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px dashed ${C.border}` }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 8 }}>
+                  Tambah Customer Baru
+                </div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <input className="inp" placeholder="Nama" value={newCust.nama}
+                    onChange={e => setNewCust({ ...newCust, nama: e.target.value })}
+                    style={{ flex: 2 }}
+                  />
+                  <input className="inp" placeholder="08xx" type="tel" value={newCust.hp}
+                    onChange={e => setNewCust({ ...newCust, hp: e.target.value })}
+                    style={{ flex: 1.5 }}
+                  />
+                  <button className="btn btn-p" style={{ flexShrink: 0, padding: "8px 12px" }}
+                    onClick={handleAddCust}
+                    disabled={saving || !newCust.nama || !newCust.hp}
+                  >
+                    {saving ? <Loader2 size={12} className="spin" /> : <Plus size={13} />}
+                  </button>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        )}
+
+        {/* Produk */}
+        <div style={{
+          position: "sticky", top: 0, zIndex: 5,
+          background: C.white, paddingTop: 4, paddingBottom: 4,
+          marginLeft: -16, marginRight: -16, paddingLeft: 16, paddingRight: 16,
+        }}>
+          <SearchInput value={search} onChange={setSearch} placeholder="Cari produk..." />
+          <div className="chips">
+            {kategori.map(k => (
+              <div key={k} className={`chip ${kat === k ? "active" : ""}`} onClick={() => setKat(k)}>{k}</div>
+            ))}
+          </div>
+        </div>
+
+        <div className="sec" style={{ marginTop: 6 }}>
+          Pilih Produk
+          <span style={{ fontSize: 9, color: C.ok, display: "flex", alignItems: "center", gap: 3, fontWeight: 700, textTransform: "none", letterSpacing: 0 }}>
+            <div style={{ width: 5, height: 5, borderRadius: "50%", background: C.ok }} /> Live
+          </span>
+        </div>
+        {/* Item terpilih */}
+        {cart.length > 0 && (
+          <div style={{ marginBottom: 10 }}>
+            {cartWithLabels.map((item) => {
+              const luasValid = item.satuan !== "meter" || (parseFloat(item.luas) || 0) > 0;
+              const dims = cartDims[item.cartKey] || {};
+              return (
+                <div key={item.cartKey} className="entry-card fade">
+                  <div className="entry-header">
+                    <div className="entry-label">
+                      <Layers size={10} />
+                      {item.displayName}
+                      <span className={`badge ${item.satuan === "meter" ? "bg-warn" : "bg-teal"}`} style={{ fontSize: 8, marginLeft: 2 }}>
+                        {item.satuan === "meter" ? "Meteran" : "Satuan"}
+                      </span>
+                    </div>
+                    <button
+                      style={{ background: C.redBg, border: "none", borderRadius: 5, width: 24, height: 24, cursor: "pointer", color: C.red, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+                      onClick={() => removeEntry(item.cartKey)}
+                    >
+                      <Trash2 size={11} />
+                    </button>
+                  </div>
+
+                  {item.satuan === "meter" ? (
+                    // [FIX 🟡] Kirim initialPanjang/initialLebar → state tidak reset
+                    <KalkulatorPxL
+                      harga={item.harga}
+                      onLuasChange={updateLuas(item.cartKey)}
+                      autoFocus={false}
+                      initialPanjang={dims.panjang ?? ""}
+                      initialLebar={dims.lebar ?? ""}
+                    />
+                  ) : (
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <div style={{ fontSize: 12, color: C.muted }}>{rp(item.harga)}/pcs</div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <button
+                          style={{ width: 28, height: 28, borderRadius: 7, border: `1.5px solid ${C.border}`, background: C.white, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+                          onClick={() => updateQty(item.cartKey, item.qty - 1)}
+                        ><Minus size={12} /></button>
+                        <span style={{ fontWeight: 800, minWidth: 22, textAlign: "center", fontSize: 15 }}>{item.qty}</span>
+                        <button
+                          style={{ width: 28, height: 28, borderRadius: 7, border: `1.5px solid ${C.border}`, background: C.white, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+                          onClick={() => updateQty(item.cartKey, item.qty + 1)}
+                        ><Plus size={12} /></button>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: C.p700, marginLeft: 4, minWidth: 70, textAlign: "right" }}>{rp(item.subtotal)}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {item.satuan === "meter" && !luasValid && (
+                    <div style={{ fontSize: 10, color: C.red, marginTop: 4, display: "flex", alignItems: "center", gap: 3 }}>
+                      <AlertCircle size={10} /> Isi dimensi karpet
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {loadingProducts ? (
+          <div className="loading"><Loader2 size={20} className="spin" color={C.primary} /> Memuat produk...</div>
+        ) : filtered.length === 0 ? (
+          <div className="empty"><div className="empty-icon"><Search size={36} color={C.border} /></div>Produk tidak ditemukan</div>
+        ) : (
+          <div className="prod-grid">
+            {filtered.map(prod => {
+              const inCart = prodIdsInCart.has(prod.id);
+              return (
+                <div key={prod.id} onClick={() => addEntry(prod)}>
+                  <div className={`prod-card ${inCart ? "sel" : ""}`}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                      <span className={`badge ${prod.satuan === "meter" ? "bg-warn" : "bg-teal"}`} style={{ fontSize: 8 }}>
+                        {prod.satuan === "meter" ? "Meteran" : "Satuan"}
+                      </span>
+                      {inCart
+                        ? <span style={{ fontSize: 9, fontWeight: 700, color: C.p700, display: "flex", alignItems: "center", gap: 2 }}>
+                          <Plus size={9} /> Tambah
+                        </span>
+                        : <Plus size={13} color={C.muted} />
+                      }
+                    </div>
+                    <div className="prod-card-name" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{prod.nama}</div>
+                    <div className="prod-card-price">{rp(prod.harga)}</div>
+                    <div className="prod-card-sub">{prod.satuan === "meter" ? "per m²" : "per pcs"}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <div style={{ height: 16 }} />
+      </div>
+
+      <div className="foot">
+        {!customer && (
+          <div style={{ background: C.warnBg, border: `1px solid ${C.warn}`, borderRadius: 8, padding: "7px 11px", fontSize: 11, color: C.warnTx, display: "flex", alignItems: "center", gap: 5 }}>
+            <AlertCircle size={12} /> Pilih customer dulu sebelum lanjut
+          </div>
+        )}
+        {cart.length > 0 && !luasOk && (
+          <div style={{ background: C.redBg, border: `1px solid ${C.red}`, borderRadius: 8, padding: "7px 11px", fontSize: 11, color: C.red, display: "flex", alignItems: "center", gap: 5 }}>
+            <AlertCircle size={12} /> Lengkapi dimensi karpet dulu
+          </div>
+        )}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <div style={{ fontSize: 10, color: C.muted, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".4px" }}>
+              {cart.length} item{customer ? ` · ${customer.nama}` : ""}
+            </div>
+            <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 20, fontWeight: 800, color: C.dark }}>{rp(total)}</div>
+          </div>
+          <div className={`badge ${svcType === "homeservice" ? "bg-amber" : "bg-teal"}`}>
+            {svcType === "homeservice" ? <><Home size={9} /> Home Service</> : <><Package size={9} /> Workshop</>}
+          </div>
+        </div>
+        <button className="btn btn-p btn-full" disabled={!canNext} onClick={onNext}>
+          Lanjut ke Pembayaran <ChevronRight size={14} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── STEP 2 ───────────────────────────────────────────────────────────────────
+function Step2({ cart, customer, svcType, onBack, onSave, saving }) {
+  const [payMethod, setPayMethod] = useState("Tunai");
+  const [catatan, setCatatan] = useState("");
+  const [showCatatan, setShowCatatan] = useState(false);
+  const [showBackWarn, setShowBackWarn] = useState(false);
+  const [dpNominal, setDpNominal] = useState("");
+  const [diskonType, setDiskonType] = useState("nominal");
+  const [diskonVal, setDiskonVal] = useState("");
+
+  const isHS = svcType === "homeservice";
+  const subtotal = cart.reduce((s, c) => s + c.subtotal, 0);
+  const cartWithLabels = addItemLabels(cart);
+
+  const rawDiskon = parseFloat(diskonVal) || 0;
+  const diskonAmt = (() => {
+    if (diskonType === "persen") return Math.min((subtotal * rawDiskon) / 100, subtotal);
+    return Math.min(rawDiskon, subtotal);
+  })();
+  const diskonOverflow = diskonType === "nominal" ? rawDiskon > subtotal : rawDiskon > 100;
+
+  const totalHarga = subtotal - diskonAmt;
+  const dpAmount = isHS ? Math.min(parseFloat(dpNominal) || 0, totalHarga) : 0;
+  const dpMissing = isHS && dpAmount <= 0;
+  const canSave = !!payMethod && !dpMissing;
+
+  const handleBack = () => { if (cart.length > 0) setShowBackWarn(true); else onBack(); };
+  const handleSave = () => {
+    onSave({ payMethod, diskonAmt, diskonType, diskonNilai: rawDiskon, catatan, dpAmount: isHS ? dpAmount : 0 });
+  };
+
+  return (
+    <div className="ani" style={{ display: "flex", flexDirection: "column", flex: 1 }}>
+      {showBackWarn && (
+        <div style={{ padding: "8px 16px 0" }}>
+          <div className="back-warn fade">
+            <AlertTriangle size={14} />
+            <span style={{ flex: 1 }}>Yakin kembali ke step 1?</span>
+            <button className="btn btn-sm" style={{ background: C.warn, color: "white", border: "none", padding: "4px 10px", fontSize: 11 }} onClick={() => { setShowBackWarn(false); onBack(); }}>Ya</button>
+            <button className="btn btn-sm btn-s" style={{ padding: "4px 10px", fontSize: 11 }} onClick={() => setShowBackWarn(false)}>Batal</button>
+          </div>
+        </div>
+      )}
+
+      <div className="sc" style={{ paddingBottom: 80 }}>
+
+        {/* Deposit Booking (Home Service) */}
+        {isHS && (
+          <div className="deposit-badge fade" style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: C.amberTx, display: "flex", alignItems: "center", gap: 5, marginBottom: 4 }}>
+              <Home size={13} /> Deposit Booking
+            </div>
+            <div style={{ fontSize: 10, color: C.amberTx, marginBottom: 10, opacity: .8 }}>
+              Deposit untuk konfirmasi jadwal. Dicatat terpisah, tidak mengurangi tagihan.
+            </div>
+            <div style={{ position: "relative" }}>
+              <span style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", fontSize: 12, fontWeight: 700, color: C.muted }}>Rp</span>
+              <input
+                type="number" min="0"
+                placeholder="Nominal deposit"
+                value={dpNominal}
+                onChange={e => setDpNominal(e.target.value)}
+                style={{
+                  width: "100%", padding: "10px 12px 10px 32px",
+                  border: `1.5px solid ${dpMissing ? C.red : C.amberBd}`,
+                  borderRadius: 8, fontWeight: 700,
+                  fontFamily: "inherit", color: C.dark, outline: "none", background: C.white,
+                  transition: "border-color .2s",
+                }}
+              />
+            </div>
+            {dpMissing && (
+              <div style={{ fontSize: 11, color: C.red, marginTop: 6, fontWeight: 600, display: "flex", alignItems: "center", gap: 3 }}>
+                <AlertCircle size={11} color={C.red} /> Isi nominal deposit dulu untuk melanjutkan
+              </div>
+            )}
+            {dpAmount > 0 && (
+              <div style={{ fontSize: 11, color: C.amberTx, marginTop: 6, fontWeight: 600, display: "flex", alignItems: "center", gap: 3 }}>
+                <CheckCircle size={11} color={C.amber} /> Deposit {rp(dpAmount)} dicatat · sisa {rp(totalHarga - dpAmount)} dibayar saat selesai
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Diskon */}
+        <div className="sec">Diskon <span style={{ fontWeight: 400, textTransform: "none", fontSize: 9, letterSpacing: 0 }}>(opsional)</span></div>
+        <div style={{ marginBottom: 16 }}>
+          <div className={`diskon-wrap ${diskonOverflow ? "err" : ""}`}>
+            <input
+              type="number" min="0" max={diskonType === "persen" ? 100 : undefined}
+              placeholder="0"
+              value={diskonVal}
+              onChange={e => setDiskonVal(e.target.value)}
+              className="diskon-input"
+            />
+            <div className="diskon-suffix">
+              <button className={`diskon-suffix-btn ${diskonType === "nominal" ? "active" : ""}`}
+                onClick={() => { setDiskonType("nominal"); setDiskonVal(""); }}>Rp</button>
+              <button className={`diskon-suffix-btn ${diskonType === "persen" ? "active" : ""}`}
+                onClick={() => { setDiskonType("persen"); setDiskonVal(""); }}>%</button>
+            </div>
+          </div>
+          {diskonOverflow && (
+            <div style={{ fontSize: 11, color: C.red, marginTop: 5, fontWeight: 600, display: "flex", alignItems: "center", gap: 3 }}>
+              <AlertCircle size={11} /> {diskonType === "persen" ? "Persentase tidak boleh lebih dari 100%" : "Diskon melebihi total tagihan — otomatis dikurangi ke maksimum"}
+            </div>
+          )}
+          {diskonAmt > 0 && !diskonOverflow && (
+            <div style={{ fontSize: 11, color: C.ok, marginTop: 5, fontWeight: 600, display: "flex", alignItems: "center", gap: 3 }}>
+              <CheckCircle size={11} /> Hemat {rp(diskonAmt)}{diskonType === "persen" ? ` (${rawDiskon}%)` : ""}
+            </div>
+          )}
+        </div>
+
+        {/* Metode Pembayaran */}
+        <div className="sec">Metode Pembayaran</div>
+        <div className="pay-chips">
+          {PAY_METHODS.map(m => {
+            const Icon = m.Icon;
+            return (
+              <div key={m.id} className={`pay-chip ${payMethod === m.id ? "sel" : ""}`} onClick={() => setPayMethod(m.id)}>
+                <Icon size={20} color={payMethod === m.id ? C.p700 : C.dark2} />
+                {/* [FIX 🟢] Pakai m.label yang lebih pendek */}
+                <div className="pay-chip-n">{m.label}</div>
+                <div style={{ fontSize: 9, color: C.muted }}>{m.sub}</div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* [FIX 🟡] Info status yang akan disimpan untuk QRIS/Transfer */}
+        {!isHS && (payMethod === "QRIS" || payMethod === "Transfer") && (
+          <div style={{ background: C.blueBg, border: `1px solid ${C.blue}`, borderRadius: 8, padding: "8px 11px", fontSize: 11, color: C.blueTx, display: "flex", alignItems: "center", gap: 5, marginBottom: 14, marginTop: -8 }}>
+            <Clock size={12} /> Status akan disimpan sebagai <strong>Menunggu Konfirmasi</strong> — ubah ke Lunas setelah pembayaran dikonfirmasi
+          </div>
+        )}
+
+        {/* Catatan */}
+        {!showCatatan
+          ? <button className="btn btn-g btn-sm" style={{ marginBottom: 14 }} onClick={() => setShowCatatan(true)}>
+            <Plus size={12} /> Tambah catatan
+          </button>
+          : <div style={{ marginBottom: 14 }}>
+            <input className="inp" placeholder="Catatan order..." value={catatan} onChange={e => setCatatan(e.target.value)} autoFocus />
+          </div>
+        }
+
+        {/* Rincian */}
+        <div className="sum-box">
+          <div style={{ padding: "8px 12px", background: C.surface, borderBottom: `.5px solid ${C.border}` }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: ".5px" }}>Rincian</span>
+          </div>
+
+          {cartWithLabels.map((item) => (
+            <div key={item.cartKey} className="sum-row">
+              <div>
+                <div style={{ fontWeight: 600, color: C.dark }}>{item.displayName}</div>
+                <div style={{ fontSize: 10, color: C.muted }}>
+                  {item.satuan === "meter"
+                    ? `${(parseFloat(item.luas) || 0).toFixed(2)} m² × ${rp(item.harga)}`
+                    : `${item.qty} pcs × ${rp(item.harga)}`}
+                </div>
+              </div>
+              <span style={{ fontWeight: 600 }}>{rp(item.subtotal)}</span>
+            </div>
+          ))}
+
+          {cart.length > 1 && (
+            <div className="sum-row" style={{ background: C.surface }}>
+              <span style={{ color: C.muted }}>Subtotal</span>
+              <span style={{ fontWeight: 600 }}>{rp(subtotal)}</span>
+            </div>
+          )}
+
+          {diskonAmt > 0 && (
+            <div className="sum-row" style={{ color: C.okTx }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 4 }}><Tag size={11} /> Diskon</span>
+              <span style={{ fontWeight: 700 }}>− {rp(diskonAmt)}</span>
+            </div>
+          )}
+
+          <div className="sum-total">
+            <span style={{ fontSize: 13, fontWeight: 800, color: C.p700 }}>Total Tagihan</span>
+            <span style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 18, fontWeight: 800, color: C.p700 }}>
+              {rp(totalHarga)}
+            </span>
+          </div>
+
+          {isHS && dpAmount > 0 && (
+            <div style={{ padding: "8px 12px", background: C.amberBg, borderTop: `.5px solid ${C.amberBd}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: 11, color: C.amberTx, fontWeight: 600, display: "flex", alignItems: "center", gap: 3 }}>
+                <Banknote size={11} /> Deposit dibayar
+              </span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: C.amberTx }}>{rp(dpAmount)}</span>
+            </div>
+          )}
+
+          {isHS && dpAmount > 0 && (
+            <div style={{ padding: "8px 12px", background: C.warnBg, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: 11, color: C.warnTx, fontWeight: 600, display: "flex", alignItems: "center", gap: 3 }}>
+                <Clock size={11} /> Sisa bayar saat selesai
+              </span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: C.warnTx }}>{rp(totalHarga - dpAmount)}</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="foot">
+        {dpMissing && (
+          <div style={{ background: C.warnBg, border: `1px solid ${C.warn}`, borderRadius: 8, padding: "7px 11px", fontSize: 11, color: C.warnTx, display: "flex", alignItems: "center", gap: 5 }}>
+            <AlertCircle size={12} /> Isi nominal deposit booking dulu
+          </div>
+        )}
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="btn btn-s" style={{ width: 52 }} onClick={handleBack}><ArrowLeft size={14} /></button>
+          <button className="btn btn-p" style={{ flex: 1 }} disabled={!canSave || saving} onClick={handleSave}>
+            {saving
+              ? <><Loader2 size={14} className="spin" /> Menyimpan...</>
+              : <><CheckCircle size={14} /> Simpan · {rp(totalHarga)}</>
+            }
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── SUCCESS PAGE ─────────────────────────────────────────────────────────────
 function StepSukses({ order, onReset, onViewNota }) {
   const [copied, setCopied] = useState(false);
   const notaUrl = `${window.location.origin}/nota/${order.notaId}`;
-  const isHomeVisit = order.layananType === "home_visit";  // ← cek tipe layanan
+  const isHS = order.layananType === "homeservice";
 
   const copyLink = () => {
     navigator.clipboard?.writeText(notaUrl).catch(() => { });
@@ -1141,1294 +1175,983 @@ function StepSukses({ order, onReset, onViewNota }) {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const buildWAMessage = () => {
-    const fmt = (n) => "Rp " + (n || 0).toLocaleString("id-ID");
-    const itemLines = order.items.map((it) => {
-      const belum = it.satuan === "meter" && (!it.luas || it.luas === 0);
-      if (belum) return `  - ${it.nama} (ukuran menyusul)`;
-      if (it.satuan === "meter") return `  - ${it.nama} ${Number(it.luas).toFixed(2)} m² = ${fmt(it.subtotal)}`;
-      return `  - ${it.qty}x ${it.nama} = ${fmt(it.subtotal)}`;
-    }).join("\n");
-    const subtotal = order.items.reduce((s, it) => s + (it.subtotal || 0), 0);
-    const diskonAmount = order.diskon?.amount || 0;
-    const totalAkhir = subtotal - diskonAmount;
-    const diskonLine = diskonAmount > 0 ? `Diskon: -${fmt(diskonAmount)}\n` : "";
-    const metodeLabel = order.metode || "Tunai";
-    const trackingUrl = `${window.location.origin}/track/${order.notaId}`;
+  const subtotal = order.items.reduce((s, it) => s + it.subtotal, 0);
+  const diskonAmt = order.diskon?.amount || 0;
+  const totalTagihan = subtotal - diskonAmt;
+  const dpAmt = order.dpAmount || 0;
+  const sisaBayar = totalTagihan - dpAmt;
+  const itemsLabeled = addItemLabels(order.items);
 
-    // ── Pesan WA berbeda untuk Home Visit ──────────────────────────────────
-    if (isHomeVisit) {
-      return (
-        `Halo ${order.customerNama}, terima kasih sudah mempercayakan perawatan ke *Carpetology*!\n\n` +
-        `Berikut nota layanan *Home Visit* Anda:\n\n${itemLines}\n\n` +
-        `${diskonAmount > 0 ? `Subtotal: ${fmt(subtotal)}\n${diskonLine}` : ""}` +
-        `Total: *${fmt(totalAkhir)}*\nPembayaran: ${metodeLabel} ✅ Lunas\n\n` +
-        `Layanan telah selesai dikerjakan di tempat Anda.\n\n` +
-        `Lihat nota digital: ${notaUrl}\n\nTerima kasih — Carpetology`
-      );
-    }
-
-    // ── Pesan WA laundry biasa ─────────────────────────────────────────────
-    const adaBelumDiukur = order.items.some(it => it.satuan === "meter" && (!it.luas || it.luas === 0));
-    const totalLine = adaBelumDiukur
-      ? `Total sementara: *${fmt(totalAkhir)}* (menyusul setelah pengukuran)`
-      : `${diskonAmount > 0 ? `Subtotal: ${fmt(subtotal)}\n${diskonLine}` : ""}Total: *${fmt(totalAkhir)}*`;
-    const statusBayar = order.statusBayar === "Lunas" ? "Lunas" : "Belum lunas";
-    return (
-      `Halo ${order.customerNama}, terima kasih sudah mempercayakan cucian Anda ke *Carpetology*!\n\n` +
-      `Berikut ringkasan order Anda:\n\n${itemLines}\n\n` +
-      `${totalLine}\nPembayaran: ${metodeLabel} (${statusBayar})\n\n` +
-      `*Garansi & Ketentuan:*\n- Estimasi selesai 5-7 hari kerja\n- Garansi cuci ulang gratis, klaim maks. 7 hari setelah pengambilan\n- Barang yang tidak diambil >30 hari menjadi tanggung jawab pelanggan\n\n` +
-      `Nota digital: ${notaUrl}\n` +
-      `Pantau progres cucian: ${trackingUrl}\n\n` +
-      `Terima kasih atas kepercayaan Anda — Carpetology`
-    );
+  const buildWA = () => {
+    const itemLines = itemsLabeled.map(it =>
+      it.satuan === "meter"
+        ? `  - ${it.displayName} ${Number(it.luas).toFixed(2)} m² = ${rp(it.subtotal)}`
+        : `  - ${it.qty}× ${it.displayName} = ${rp(it.subtotal)}`
+    ).join("\n");
+    const diskonLine = diskonAmt > 0 ? `Diskon: −${rp(diskonAmt)}\n` : "";
+    const depositLine = isHS && dpAmt > 0 ? `Deposit: ${rp(dpAmt)} ✓\nSisa bayar: ${rp(sisaBayar)}\n` : "";
+    const statusLine = order.statusBayar === "Menunggu Konfirmasi"
+      ? `Status: Menunggu Konfirmasi Pembayaran\n`
+      : "";
+    return `Halo ${order.customerNama}, terima kasih sudah mempercayakan ke *Carpetology*!\n\n` +
+      `${itemLines}\n${diskonLine}Total Tagihan: *${rp(totalTagihan)}*\n${depositLine}${statusLine}Metode: ${order.metode}\n\nNota: ${notaUrl}`;
   };
 
-  const handleKirimWA = () => {
+  const handleWA = () => {
     const hp = (order.customerHp || "").replace(/\D/g, "").replace(/^0/, "62");
-    window.open(`https://wa.me/${hp}?text=${encodeURIComponent(buildWAMessage())}`, "_blank");
-  };
-
-  const adaBelumDiukur = !isHomeVisit && order.items.some(it => it.satuan === "meter" && (!it.luas || it.luas === 0));
-  const totalSudah = order.items
-    .filter(it => !(it.satuan === "meter" && (!it.luas || it.luas === 0)))
-    .reduce((s, it) => s + (it.subtotal || 0), 0);
-
-  return (
-    <div className="animate-in" style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <div className="step-content" style={{ flex: 1 }}>
-
-        {/* ── SUCCESS HEADER ── */}
-        <div className="success-screen">
-          <div className="success-icon" style={{ background: isHomeVisit ? "#FEF3C7" : C.successBg }}>
-            {isHomeVisit
-              ? <Home size={40} color="#D97706" />
-              : <CheckCircle size={40} color={C.success} />
-            }
-          </div>
-          <div className="success-title">Transaksi Berhasil!</div>
-          <div className="success-sub">
-            {isHomeVisit
-              ? <>Layanan <strong>Home Visit</strong> untuk <strong>{order.customerNama}</strong> selesai dikerjakan.</>
-              : <>Data order untuk <strong>{order.customerNama}</strong> berhasil disimpan.</>
-            }
-          </div>
-
-          {/* Badge Home Visit di bawah subtitle */}
-          {isHomeVisit && (
-            <div style={{
-              display: "inline-flex", alignItems: "center", gap: 6,
-              background: "#FEF3C7", color: "#92400E",
-              border: "1.5px solid #FCD34D",
-              borderRadius: 20, padding: "6px 16px",
-              fontSize: 12, fontWeight: 700, marginTop: 4,
-            }}>
-              <Home size={13} /> Home Visit · Selesai di Tempat
-            </div>
-          )}
-        </div>
-
-        {/* ── WA BUTTON ── */}
-        <div style={{
-          background: "#dcfce7", border: "2px solid #22c55e",
-          borderRadius: 16, padding: "16px", marginBottom: 16,
-          display: "flex", flexDirection: "column", gap: 10,
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{ width: 40, height: 40, borderRadius: 12, background: "#22c55e", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <MessageCircle size={20} color="white" />
-            </div>
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 800, color: "#15803d" }}>Kirim Nota via WhatsApp</div>
-              <div style={{ fontSize: 11, color: "#166534", marginTop: 1 }}>Otomatis ke {order.customerHp || "-"}</div>
-            </div>
-          </div>
-          <button
-            onClick={handleKirimWA}
-            style={{ width: "100%", padding: "13px", borderRadius: 12, border: "none", background: "#25D366", color: "#fff", fontSize: 14, fontWeight: 800, fontFamily: "inherit", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
-          >
-            <MessageCircle size={18} /> Kirim Pesan WA + Nota
-          </button>
-        </div>
-
-        {/* ── NOTA RINGKASAN ── */}
-        <div className="nota-card" style={{ marginBottom: 16 }}>
-          <div className="nota-header">
-            <div className="nota-brand"><Layers size={22} /> Carpetology</div>
-            <div className="nota-tagline">
-              {isHomeVisit ? "Nota Layanan Home Visit" : "Nota Cuci Karpet & Laundry"}
-            </div>
-            <div style={{ marginTop: 8, fontSize: 11, color: "#6B8894" }}>
-              {order.notaId} • {order.tanggal}
-            </div>
-          </div>
-          <div className="nota-body">
-            <div className="nota-row"><span className="nota-key">Customer</span><span className="nota-val">{order.customerNama}</span></div>
-            <div className="nota-row"><span className="nota-key">No. HP</span><span className="nota-val">{order.customerHp}</span></div>
-            <div className="nota-divider" />
-
-            {order.items.map((item, i) => {
-              const belumDiukur = item.satuan === "meter" && (!item.luas || item.luas === 0);
-              return (
-                <div key={i} className="nota-item-row" style={{ flexDirection: "column", alignItems: "flex-start", gap: 2 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", width: "100%" }}>
-                    <span className="nota-item-name" style={{ fontWeight: 600 }}>{item.nama}</span>
-                    <span className="nota-item-price">{belumDiukur ? "—" : rupiah(item.subtotal)}</span>
-                  </div>
-                  {belumDiukur ? (
-                    <span style={{ fontSize: 11, color: "#F59E0B", fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
-                      <Clock size={11} /> Menunggu pengukuran
-                    </span>
-                  ) : item.satuan === "meter" ? (
-                    <span style={{ fontSize: 11, color: "#6B8894", display: "flex", alignItems: "center", gap: 4 }}>
-                      <Ruler size={11} /> {Number(item.luas).toFixed(2)} m² × {rupiah(item.harga)}/m²
-                    </span>
-                  ) : (
-                    <span style={{ fontSize: 11, color: "#6B8894" }}>{item.qty} pcs × {rupiah(item.harga)}</span>
-                  )}
-                </div>
-              );
-            })}
-
-            {adaBelumDiukur ? (
-              <div style={{ background: "#FEF3C7", borderRadius: 8, padding: "10px 12px", marginTop: 8 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                  <span style={{ fontSize: 12, color: "#92400E" }}>Subtotal sementara</span>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: "#92400E" }}>{rupiah(totalSudah)}</span>
-                </div>
-                <div style={{ fontSize: 11, color: "#92400E", fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
-                  <AlertCircle size={11} /> Biaya karpet menyusul setelah pengukuran
-                </div>
-              </div>
-            ) : (
-              <div className="nota-total-row" style={{ marginTop: 12 }}>
-                <span className="nota-total-label">Total</span>
-                <span className="nota-total-val">{rupiah(order.total)}</span>
-              </div>
-            )}
-
-            {/* ── BADGE STATUS ── */}
-            <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-              <span className={`badge ${order.metode === "Belum Payment" ? "badge-warning" : "badge-success"}`}>
-                {order.metode}
-              </span>
-              {isHomeVisit ? (
-                // Home Visit: badge selesai (bukan Waiting List)
-                <>
-                  <span className="badge badge-success" style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                    <CheckCircle size={10} /> Lunas
-                  </span>
-                  <span style={{
-                    display: "inline-flex", alignItems: "center", gap: 4,
-                    padding: "3px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700,
-                    background: "#FEF3C7", color: "#92400E", border: "1px solid #FCD34D",
-                  }}>
-                    <Home size={10} /> Home Visit
-                  </span>
-                </>
-              ) : (
-                <span className="badge badge-gray">Waiting List</span>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* ── LINK NOTA ── */}
-        <div className="nota-link-box">
-          <div className="nota-link-text" style={{ fontSize: 11, wordBreak: "break-all" }}>{notaUrl}</div>
-          <button className="btn btn-sm btn-ghost" onClick={copyLink} style={{ gap: 4 }}>
-            {copied ? <><CheckCircle size={12} /> Copied!</> : <><Copy size={12} /> Copy</>}
-          </button>
-        </div>
-        {copied && <div className="toast"><CheckCircle size={14} /> Link nota berhasil disalin!</div>}
-      </div>
-
-      {/* ── FOOTER ── */}
-      <div className="footer-bar">
-        <button className="btn btn-ghost btn-full" onClick={() => onViewNota(order.notaId)} style={{ gap: 6 }}>
-          <Eye size={16} /> Lihat Halaman Nota
-        </button>
-        <button className="btn btn-primary btn-full" onClick={onReset} style={{ gap: 6 }}>
-          <Plus size={16} /> Transaksi Baru
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ─── EDIT NOTA MODAL ──────────────────────────────────────────────────────────
-// ─── EDIT NOTA MODAL ──────────────────────────────────────────────────────────
-function EditNotaModal({ order, onClose, onSaved }) {
-  const [metode, setMetode] = useState(order.metode || "");
-  const [items, setItems] = useState(() => (order.items || []).map(it => ({ ...it })));
-  const [statusBayar, setStatusBayar] = useState(order.statusBayar || "Belum Lunas");
-  const [saving, setSaving] = useState(false);
-  const [statusOrder, setStatusOrder] = useState(order?.status_order || order?.status || "Waiting List");
-
-  // ── DISKON STATE — inisialisasi dari data order yang ada ──────────────────
-  const [diskonType, setDiskonType] = useState(order.diskon?.type || "persen");
-  const [diskonVal, setDiskonVal] = useState(
-    order.diskon?.nilai != null ? String(order.diskon.nilai) : ""
-  );
-
-  const totalBaru = items.reduce((s, it) => s + (it.subtotal || 0), 0);
-
-  // Hitung diskon secara reaktif
-  const diskonAmount = diskonType === "persen"
-    ? Math.round(totalBaru * (parseFloat(diskonVal) || 0) / 100)
-    : Math.min(parseFloat(diskonVal) || 0, totalBaru);
-
-  const totalAkhir = totalBaru - diskonAmount;
-
-  const updateHarga = (idx, val) => {
-    setItems(prev => prev.map((it, i) => {
-      if (i !== idx) return it;
-      const harga = parseFloat(val) || 0;
-      const luas = it.satuan === "meter" ? (it.panjang || 0) * (it.lebar || 0) : 1;
-      return { ...it, harga, subtotal: harga * it.qty * luas };
-    }));
-  };
-
-  const updateMeter = (idx, field, val) => {
-    setItems(prev => prev.map((it, i) => {
-      if (i !== idx) return it;
-      const updated = { ...it, [field]: parseFloat(val) || 0 };
-      const luas = (updated.panjang || 0) * (updated.lebar || 0);
-      return { ...updated, luas, subtotal: updated.harga * updated.qty * luas };
-    }));
-  };
-
-  const updateQty = (idx, val) => {
-    const qty = Math.max(1, val);
-    setItems(prev => prev.map((it, i) => {
-      if (i !== idx) return it;
-      const luas = it.satuan === "meter" ? (it.panjang || 0) * (it.lebar || 0) : 1;
-      return { ...it, qty, subtotal: it.harga * qty * luas };
-    }));
-  };
-
-  const EDIT_PAY_METHODS = [
-    { id: "Tunai", Icon: Banknote },
-    { id: "QRIS", Icon: QrCode },
-    { id: "Transfer", Icon: Building2 },
-    { id: "Belum Payment", Icon: Clock },
-  ];
-
-  const handleSimpan = async () => {
-    setSaving(true);
-    try {
-      const { doc, updateDoc, collection, query, where, getDocs } = await import("firebase/firestore");
-      const itemsPayload = items.map((it) => ({
-        produkId: it.produkId || "", nama: it.nama, satuan: it.satuan, qty: it.qty, harga: it.harga,
-        panjang: null, lebar: null,
-        luas: it.satuan === "meter" ? (parseFloat(it.luas) || 0) : null,
-        subtotal: it.subtotal,
-      }));
-      const q = query(collection(db, "transactions"), where("notaId", "==", order.notaId));
-      const txSnap = await getDocs(q);
-      if (txSnap.empty) { alert("Transaksi tidak ditemukan!"); return; }
-      for (const txDoc of txSnap.docs) {
-        await updateDoc(doc(db, "transactions", txDoc.id), {
-          items: itemsPayload,
-          subtotal_harga: totalBaru,
-          diskon: {
-            type: diskonType,
-            nilai: parseFloat(diskonVal) || 0,
-            amount: diskonAmount,
-          },
-          total_harga: totalAkhir,
-          statusBayar,
-          metode_pembayaran: metode,
-          status_order: statusOrder,
-        });
-      }
-      onSaved();
-      onClose();
-    } catch (e) {
-      console.error("Gagal menyimpan:", e);
-      alert("Gagal menyimpan: " + e.message);
-    } finally {
-      setSaving(false);
-    }
+    window.open(`https://wa.me/${hp}?text=${encodeURIComponent(buildWA())}`, "_blank");
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(26,46,53,0.6)", display: "flex", alignItems: "flex-end" }}>
-      <div style={{ background: C.white, width: "100%", borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: "90vh", display: "flex", flexDirection: "column", animation: "slideUp .25s ease-out" }}>
-        {/* Header */}
-        <div style={{ padding: "16px 20px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
-          <div>
-            <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 16, fontWeight: 700, color: C.dark }}>Edit Nota</div>
-            <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{order.notaId}</div>
-          </div>
-          <button onClick={onClose} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, width: 32, height: 32, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: C.muted }}>
-            <X size={16} />
-          </button>
+    <div className="ani sc">
+      <div style={{ textAlign: "center", padding: "24px 0 18px" }}>
+        <div style={{ width: 60, height: 60, background: C.okBg, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px" }}>
+          <CheckCircle size={28} color={C.ok} />
         </div>
+        <div style={{ fontSize: 18, fontWeight: 800, color: C.dark, marginBottom: 4 }}>Transaksi Berhasil</div>
+        <div style={{ fontSize: 12, color: C.muted, marginBottom: 10 }}>
+          <strong style={{ color: C.dark }}>{order.customerNama}</strong> · {order.tanggal}
+        </div>
+        <div style={{ display: "flex", justifyContent: "center", gap: 6, flexWrap: "wrap" }}>
+          <span className={`badge ${isHS ? "bg-amber" : "bg-teal"}`} style={{ padding: "4px 10px", fontSize: 11 }}>
+            {isHS ? <><Home size={10} /> Home Service</> : <><Package size={10} /> Workshop</>}
+          </span>
+          {/* [FIX 🟡] Badge status baru */}
+          <span className={`badge ${statusBadgeClass(order.statusBayar)}`} style={{ padding: "4px 10px", fontSize: 11 }}>
+            {statusIcon(order.statusBayar)} {order.statusBayar}
+          </span>
+        </div>
+      </div>
 
-        <div style={{ overflowY: "auto", flex: 1, padding: "16px 20px 8px" }}>
-
-          {/* Status */}
-          <div className="section-header">Status</div>
-          <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
-            {["Belum Lunas", "Lunas"].map(s => (
-              <div key={s} onClick={() => setStatusBayar(s)} style={{
-                flex: 1, padding: "12px", borderRadius: 12, cursor: "pointer", textAlign: "center",
-                border: `2px solid ${statusBayar === s ? C.primary : C.border}`,
-                background: statusBayar === s ? C.primary100 : C.white,
-                fontWeight: 700, fontSize: 13, color: statusBayar === s ? C.primary700 : C.muted,
-                transition: "all .15s", display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-              }}>
-                {s === "Lunas" ? <><CheckCircle size={14} /> Lunas</> : <><Clock size={14} /> Belum Lunas</>}
-              </div>
-            ))}
+      <div className="nota-card" style={{ marginBottom: 14 }}>
+        <div className="nota-hdr">
+          <div className="nota-brand"><Layers size={16} /> Carpetology</div>
+          <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>{order.notaId}</div>
+        </div>
+        <div style={{ padding: "14px 16px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12, paddingBottom: 10, borderBottom: `.5px solid ${C.border}` }}>
+            <div style={{ fontSize: 14, fontWeight: 700 }}>{order.customerNama}</div>
+            <div style={{ fontSize: 11, color: C.muted, display: "flex", alignItems: "center", gap: 3 }}><Phone size={10} /> {order.customerHp}</div>
           </div>
 
-          {/* Metode Pembayaran */}
-          <div className="section-header">Metode Pembayaran</div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 20 }}>
-            {EDIT_PAY_METHODS.map((m) => {
-              const Icon = m.Icon;
-              return (
-                <div key={m.id} onClick={() => setMetode(m.id)} style={{
-                  border: `2px solid ${metode === m.id ? C.primary : C.border}`, borderRadius: 12, padding: "12px",
-                  cursor: "pointer", textAlign: "center", background: metode === m.id ? C.primary100 : C.white,
-                  transition: "all .15s", display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
-                }}>
-                  <Icon size={20} color={metode === m.id ? C.primary700 : C.darkMid} />
-                  <div style={{ fontSize: 12, fontWeight: 700, color: metode === m.id ? C.primary700 : C.dark }}>{m.id}</div>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Detail Item */}
-          <div className="section-header">Detail Item</div>
-          {items.map((item, idx) => (
-            <div key={idx} style={{ border: `1.5px solid ${C.border}`, borderRadius: 12, padding: "12px 14px", marginBottom: 10, background: C.surface }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>{item.nama}</div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <button className="qty-btn" onClick={() => updateQty(idx, item.qty - 1)}><Minus size={13} /></button>
-                  <span style={{ fontFamily: "'Space Grotesk',sans-serif", fontWeight: 700, minWidth: 20, textAlign: "center" }}>{item.qty}</span>
-                  <button className="qty-btn" onClick={() => updateQty(idx, item.qty + 1)}><Plus size={13} /></button>
-                </div>
+          {itemsLabeled.map((it, i) => (
+            <div key={it.cartKey || i} style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 600 }}>{it.displayName}</div>
+                <div style={{ fontSize: 10, color: C.muted }}>{it.satuan === "meter" ? `${Number(it.luas).toFixed(2)} m²` : `${it.qty} pcs`}</div>
               </div>
-              <div style={{ marginBottom: 8 }}>
-                <div style={{ fontSize: 11, color: C.muted, fontWeight: 600, marginBottom: 4, textTransform: "uppercase" }}>
-                  Harga {item.satuan === "meter" ? "/m²" : "/pcs"}
-                </div>
-                <input type="number" value={item.harga} onChange={e => updateHarga(idx, e.target.value)}
-                  style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: `1.5px solid ${C.border}`, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
-              </div>
-              {item.satuan === "meter" && (
-                <>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                    {["panjang", "lebar"].map(field => (
-                      <div key={field}>
-                        <div style={{ fontSize: 11, color: C.muted, fontWeight: 600, marginBottom: 4, textTransform: "uppercase" }}>
-                          {field.charAt(0).toUpperCase() + field.slice(1)} (m)
-                        </div>
-                        <input type="number" step="0.1" min="0" value={item[field] ?? 0}
-                          onChange={e => updateMeter(idx, field, e.target.value)}
-                          style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: `1.5px solid ${C.border}`, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
-                      </div>
-                    ))}
-                  </div>
-                  <div style={{ background: C.primary100, borderRadius: 8, padding: "8px 12px", marginTop: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={{ fontSize: 11, color: C.primary700, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
-                      <Ruler size={12} /> {(item.panjang || 0).toFixed(1)}m × {(item.lebar || 0).toFixed(1)}m = {(item.luas || 0).toFixed(2)} m²
-                    </span>
-                    <span style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 13, fontWeight: 700, color: C.primary700 }}>{rupiah(item.subtotal)}</span>
-                  </div>
-                </>
-              )}
-              {item.satuan !== "meter" && (
-                <div style={{ background: C.primary100, borderRadius: 8, padding: "8px 12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ fontSize: 11, color: C.primary700 }}>{item.qty} × {rupiah(item.harga)}</span>
-                  <span style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 13, fontWeight: 700, color: C.primary700 }}>{rupiah(item.subtotal)}</span>
-                </div>
-              )}
+              <span style={{ fontSize: 13, fontWeight: 600 }}>{rp(it.subtotal)}</span>
             </div>
           ))}
 
-          {/* ── DISKON ─────────────────────────────────────────────────────── */}
-          <div className="section-header">Diskon (Opsional)</div>
-          <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-            {["persen", "nominal"].map(t => (
-              <button
-                key={t}
-                className={`btn btn-sm ${diskonType === t ? "btn-primary" : "btn-secondary"}`}
-                style={{ flex: 1 }}
-                onClick={() => { setDiskonType(t); setDiskonVal(""); }}
-              >
-                {t === "persen" ? "% Persen" : "Rp Nominal"}
+          <div style={{ borderTop: `.5px solid ${C.border}`, marginTop: 8, paddingTop: 8 }}>
+            {diskonAmt > 0 && (
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: C.okTx, marginBottom: 4 }}>
+                <span style={{ display: "flex", alignItems: "center", gap: 3 }}><Tag size={10} /> Diskon</span>
+                <span style={{ fontWeight: 700 }}>−{rp(diskonAmt)}</span>
+              </div>
+            )}
+          </div>
+
+          <div style={{ background: C.p100, borderRadius: 8, padding: "10px 12px", display: "flex", justifyContent: "space-between", marginTop: 8 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: C.p700 }}>Total Tagihan</span>
+            <span style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 16, fontWeight: 800, color: C.p700 }}>{rp(totalTagihan)}</span>
+          </div>
+
+          {isHS && dpAmt > 0 && (
+            <>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: C.amberTx, marginTop: 8 }}>
+                <span style={{ display: "flex", alignItems: "center", gap: 3 }}><Banknote size={10} /> Deposit dibayar</span>
+                <span style={{ fontWeight: 700 }}>{rp(dpAmt)}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: C.warnTx, marginTop: 4 }}>
+                <span style={{ display: "flex", alignItems: "center", gap: 3 }}><Clock size={10} /> Sisa dibayar saat selesai</span>
+                <span style={{ fontWeight: 700 }}>{rp(sisaBayar)}</span>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      <button className="btn btn-green btn-full" style={{ marginBottom: 8, fontSize: 13 }} onClick={handleWA}>
+        <MessageCircle size={16} /> Kirim via WhatsApp
+      </button>
+
+      <div style={{ background: C.p50, border: `1.5px dashed ${C.primary}`, borderRadius: 9, padding: "9px 12px", display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+        <span style={{ fontSize: 11, color: C.p700, fontWeight: 600, wordBreak: "break-all", flex: 1 }}>{notaUrl}</span>
+        <button className="btn btn-g btn-sm" onClick={copyLink} style={{ flexShrink: 0 }}>
+          {copied ? <><CheckCircle size={11} /> Copied</> : <><Copy size={11} /> Copy</>}
+        </button>
+      </div>
+
+      <div style={{ display: "flex", gap: 8 }}>
+        <button className="btn btn-g" style={{ flex: 1 }} onClick={() => onViewNota(order.notaId)}>
+          <Eye size={14} /> Lihat Nota
+        </button>
+        <button className="btn btn-p" style={{ flex: 1 }} onClick={onReset}>
+          <Plus size={14} /> Transaksi Baru
+        </button>
+      </div>
+      {copied && <div className="toast"><CheckCircle size={13} /> Link disalin!</div>}
+    </div>
+  );
+}
+
+// ─── HISTORY CARD ─────────────────────────────────────────────────────────────
+function HistCard({ order, onViewNota, search, onTandaiLunas, onKonfirmasiPembayaran, onEdit, onDelete, isAdmin, lunasLoading }) {
+  const isHS = order.layananType === "homeservice";
+  const isLunas = isStatusLunas(order.statusBayar);
+  const items = order.items || [];
+  const MAX_ITEM_SHOW = 2;
+  const isThisLoading = lunasLoading === order.notaId;
+  const itemsLabeled = addItemLabels(items);
+
+  return (
+    <div className="hist-card" onClick={() => onViewNota(order.notaId || order.id)}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: C.dark, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            <HL text={order.customerNama || ""} query={search} />
+          </div>
+          <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>
+            {order.notaId} · {fmtDate(order.timestamp || order.tanggal)}
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", justifyContent: "flex-end", flexShrink: 0, marginLeft: 8 }}>
+          {isHS && <span className="badge bg-amber"><Home size={9} /> HS</span>}
+          <span className={`badge ${statusBadgeClass(order.statusBayar)}`}>
+            {statusIcon(order.statusBayar)} {isLunas ? "Lunas" : order.statusBayar === "Menunggu Konfirmasi" ? "Konfirmasi" : "Belum"}
+          </span>
+        </div>
+      </div>
+
+      <div style={{ fontSize: 11, color: C.muted, marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {itemsLabeled.slice(0, MAX_ITEM_SHOW).map((it, i) => (
+          <span key={it.cartKey || i}>{i > 0 && ", "}{it.qty || 1}× {it.displayName}</span>
+        ))}
+        {items.length > MAX_ITEM_SHOW && (
+          <span style={{ color: C.primary, fontWeight: 700 }}> +{items.length - MAX_ITEM_SHOW} lainnya</span>
+        )}
+        {order.catatan && (
+          <div style={{ fontSize: 10, color: C.warnTx, marginTop: 3, fontStyle: "italic", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {order.catatan}
+          </div>
+        )}
+      </div>
+
+      <div className="hist-bot">
+        <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+          <span className="badge bg-gray">{order.metode}</span>
+          {order.diskon?.amount > 0 && <span className="badge bg-warn">−{rp(order.diskon.amount)}</span>}
+          {!isLunas && order.statusBayar === "Menunggu Konfirmasi" && (
+            <button
+              className="lunas-btn"
+              style={{ background: C.blueBg, color: C.blueTx, borderColor: C.blue }}
+              disabled={isThisLoading}
+              onClick={e => {
+                e.stopPropagation();
+                onKonfirmasiPembayaran(order);
+              }}
+            >
+              {isThisLoading
+                ? <><Loader2 size={9} className="spin" /> Memproses...</>
+                : <><CheckCircle size={9} /> Konfirmasi Bayar</>
+              }
+            </button>
+          )}
+          {!isLunas && order.statusBayar !== "Menunggu Konfirmasi" && (
+            <button
+              className="lunas-btn"
+              disabled={isThisLoading}
+              onClick={e => {
+                e.stopPropagation();
+                onTandaiLunas(order);
+              }}
+            >
+              {isThisLoading
+                ? <><Loader2 size={9} className="spin" /> Memproses...</>
+                : <><CheckCircle size={9} /> Tandai Lunas</>
+              }
+            </button>
+          )}
+          {isAdmin && (
+            <>
+              <button className="edit-btn" onClick={e => { e.stopPropagation(); onEdit(order); }}>
+                <Edit3 size={9} /> Edit
               </button>
-            ))}
-          </div>
-          <div style={{ marginBottom: 20 }}>
-            <input
-              type="number"
-              placeholder={diskonType === "persen" ? "Contoh: 10 (artinya 10%)" : "Contoh: 50000"}
-              value={diskonVal}
-              min="0"
-              max={diskonType === "persen" ? 100 : totalBaru}
-              onChange={(e) => setDiskonVal(e.target.value)}
-              style={{ width: "100%", padding: "11px 14px", border: `1.5px solid ${C.border}`, borderRadius: 10, fontSize: 14, fontFamily: "inherit", color: C.dark, outline: "none", boxSizing: "border-box" }}
-            />
-            {diskonAmount > 0 && (
-              <div style={{ marginTop: 6, fontSize: 12, color: C.success, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
-                <CheckCircle size={12} /> Hemat {rupiah(diskonAmount)}{diskonType === "persen" ? ` (${diskonVal}%)` : ""}
-              </div>
-            )}
-          </div>
-
-          {/* Total */}
-          <div style={{ background: C.dark, borderRadius: 12, padding: "14px 16px", marginBottom: 16 }}>
-            {diskonAmount > 0 && (
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                <span style={{ fontSize: 12, color: C.muted }}>Subtotal</span>
-                <span style={{ fontSize: 12, color: C.muted, textDecoration: "line-through" }}>{rupiah(totalBaru)}</span>
-              </div>
-            )}
-            {diskonAmount > 0 && (
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                <span style={{ fontSize: 12, color: C.success }}>Diskon</span>
-                <span style={{ fontSize: 12, color: C.success, fontWeight: 600 }}>−{rupiah(diskonAmount)}</span>
-              </div>
-            )}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: 14, fontWeight: 700, color: C.primary }}>Total</span>
-              <span style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 20, fontWeight: 800, color: C.white }}>{rupiah(totalAkhir)}</span>
-            </div>
-          </div>
-
+              <button className="del-btn" onClick={e => { e.stopPropagation(); onDelete(order); }}>
+                <Trash2 size={9} /> Hapus
+              </button>
+            </>
+          )}
         </div>
-
-        <div style={{ padding: "12px 20px 20px", borderTop: `1px solid ${C.border}`, flexShrink: 0 }}>
-          <button className="btn btn-primary btn-full" onClick={handleSimpan} disabled={saving} style={{ gap: 6 }}>
-            {saving ? <><Loader2 size={16} className="spinning" /> Menyimpan...</> : <><CheckCircle size={16} /> Simpan Perubahan</>}
-          </button>
-        </div>
+        <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 14, fontWeight: 700, color: C.dark, flexShrink: 0 }}>{rp(order.total)}</div>
       </div>
     </div>
   );
 }
 
-// ─── NOTA PAGE ─────────────────────────────────────────────────────────────────
-function NotaPage({ notaId, orders, onBack }) {
-  const { user } = useAuth();
-  const isAdmin = user?.role === 'admin' || user?.role === 'Admin';
-  const canGoBack = isAdmin && onBack;
-  const canEdit = isAdmin;
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+// ─── EDIT NOTA MODAL ──────────────────────────────────────────────────────────
+function EditNotaModal({ order, onClose, onSave }) {
+  const [nama, setNama] = useState(order.customerNama || "");
+  const [hp, setHp] = useState(order.customerHp || "");
+  const [metode, setMetode] = useState(order.metode || "");
+  const [statusBayar, setStatusBayar] = useState(order.statusBayar || "Belum Lunas");
+  const [catatan, setCatatan] = useState(order.catatan || "");
+  const [diskonVal, setDiskonVal] = useState(String(order.diskon?.amount || ""));
+  const [saving, setSaving] = useState(false);
 
-  const [order, setOrder] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [showEdit, setShowEdit] = useState(false);
-  const [saved, setSaved] = useState(false);
+  // [FIX 🟡] Status options kini termasuk "Menunggu Konfirmasi"
+  const STATUS_OPTIONS = ["Lunas", "Menunggu Konfirmasi", "DP", "Belum Lunas"];
 
-  const handleHapus = async () => {
-    setDeleting(true);
+  const handleSave = async () => {
+    setSaving(true);
     try {
-      const { collection, query, where, getDocs, deleteDoc, doc } = await import("firebase/firestore");
-      const q = query(collection(db, "transactions"), where("notaId", "==", notaId));
-      const snap = await getDocs(q);
-      for (const d of snap.docs) {
-        await deleteDoc(doc(db, "transactions", d.id));
-      }
-      onBack(); // kembali ke riwayat setelah hapus
-    } catch (e) {
-      alert("Gagal menghapus nota: " + e.message);
-    } finally {
-      setDeleting(false);
-      setShowDeleteConfirm(false);
-    }
+      await onSave(order, { nama, hp, metode, statusBayar, catatan, diskonAmt: parseFloat(diskonVal) || 0 });
+      onClose();
+    } finally { setSaving(false); }
   };
 
-  useEffect(() => {
-    let unsub = null;
-    const fetchNota = async () => {
-      try {
-        const { collection, query, where, onSnapshot } = await import("firebase/firestore");
-        const q = query(collection(db, "transactions"), where("notaId", "==", notaId));
-        unsub = onSnapshot(q, (snap) => {
-          if (!snap.empty) {
-            const docSnap = snap.docs[0];
-            const d = docSnap.data();
-            setOrder({
-              id: docSnap.id,
-              customerNama: d.nama || "",
-              customerHp: d.hp || "-",
-              items: (d.items || []).map(it => ({ ...it, qty: Number(it.qty || 1), harga: Number(it.harga || 0), luas: it.luas != null ? Number(it.luas) : null, subtotal: Number(it.subtotal || 0) })),
-              subtotal: Number(d.subtotal_harga || d.total_harga || 0),
-              diskon: d.diskon || null,
-              total: Number(d.total_harga || 0),
-              metode: d.metode_pembayaran || "",
-              statusBayar: d.statusBayar || "Belum Lunas",
-              status: d.status_order || d.status || "Waiting List",
-              tanggal: d.tanggal || "",
-              timestamp: d.created_at || null,
-              catatan: d.catatan || "",
-              notaId: d.notaId || docSnap.id,
-            });
-          } else { setOrder(null); }
-          setLoading(false);
-        }, (err) => { console.error("Gagal fetch nota:", err); setLoading(false); });
-      } catch (e) { console.error("Gagal import firestore:", e); setLoading(false); }
-    };
-    fetchNota();
-    return () => { if (unsub) unsub(); };
-  }, [notaId]);
-
-  if (loading) {
-    return (
-      <div className="kasir-root">
-        <div style={{ background: C.dark, padding: "20px", textAlign: "center" }}>
-          <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 24, fontWeight: 800, color: C.primary, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-            <Layers size={24} /> Carpetology
-          </div>
-          <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>Jasa Cuci Karpet & Laundry Professional</div>
-        </div>
-        <div className="loading-screen" style={{ marginTop: 40 }}>
-          <Loader2 size={24} className="spinning" color={C.primary} />
-          Memuat nota...
-        </div>
-      </div>
-    );
-  }
-
-  if (!order) {
-    return (
-      <div className="kasir-root">
-        <div style={{ background: C.dark, padding: "20px", textAlign: "center" }}>
-          <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 24, fontWeight: 800, color: C.primary, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-            <Layers size={24} /> Carpetology
-          </div>
-        </div>
-        <div className="empty-state" style={{ marginTop: 60 }}>
-          <div className="empty-icon"><AlertCircle size={40} color={C.danger} /></div>
-          <div className="empty-text">Nota <strong>{notaId}</strong> tidak ditemukan</div>
-          {canGoBack && (
-            <button className="btn btn-ghost btn-sm" style={{ marginTop: 16 }} onClick={onBack}>
-              <ArrowLeft size={14} /> Kembali
-            </button>
-          )}
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="kasir-root">
-      {showEdit && <EditNotaModal order={order} onClose={() => setShowEdit(false)} onSaved={() => setSaved(true)} />}
-      {saved && <div className="toast"><CheckCircle size={14} /> Nota berhasil diupdate!</div>}
-
-      <div style={{ background: C.dark, padding: "20px", textAlign: "center" }}>
-        <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 24, fontWeight: 800, color: C.primary, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-          <Layers size={24} /> Carpetology
-        </div>
-        <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>Jasa Cuci Karpet & Laundry Professional</div>
-      </div>
-
-      <div style={{ padding: 20 }}>
-        {/* Status bar */}
-        <div style={{ background: order.statusBayar === "Lunas" ? C.successBg : C.warningBg, border: `1px solid ${order.statusBayar === "Lunas" ? C.success : C.warning}`, borderRadius: 12, padding: "10px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: order.statusBayar === "Belum Lunas" ? "#D97706" : "#15803D", display: "flex", alignItems: "center", gap: 6 }}>
-            {order.statusBayar === "Belum Lunas" ? <><Clock size={14} /> Belum Lunas</> : <><CheckCircle size={14} /> Lunas</>}
-          </div>
-          <div style={{ fontSize: 11, color: C.muted }}>{fmtDate(order.tanggal || order.timestamp)}</div>
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-sheet" onClick={e => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: C.dark }}>Edit Nota</div>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: C.muted }}><X size={18} /></button>
         </div>
 
-        {/* Customer info */}
-        <div style={{ background: C.surface, borderRadius: 12, padding: "14px 16px", marginBottom: 16, border: `1px solid ${C.border}` }}>
-          <div style={{ fontSize: 11, color: C.muted, marginBottom: 8, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px" }}>Info Customer</div>
-          <div style={{ fontSize: 18, fontWeight: 800, color: C.dark }}>{order.customerNama}</div>
-          <div style={{ fontSize: 13, color: C.muted, marginTop: 2, display: "flex", alignItems: "center", gap: 4 }}><Phone size={13} /> {order.customerHp}</div>
-          <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>#{order.id} • {order.notaId}</div>
+        <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 4 }}>Nota ID</div>
+        <div style={{ fontSize: 12, fontWeight: 600, color: C.dark, marginBottom: 12, background: C.surface, padding: "6px 10px", borderRadius: 7 }}>{order.notaId}</div>
+
+        <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 4 }}>Nama Customer</div>
+        <input className="inp" value={nama} onChange={e => setNama(e.target.value)} style={{ marginBottom: 10 }} />
+
+        <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 4 }}>No. HP</div>
+        <input className="inp" type="tel" value={hp} onChange={e => setHp(e.target.value)} style={{ marginBottom: 10 }} />
+
+        <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 4 }}>Diskon (Rp)</div>
+        <div style={{ position: "relative", marginBottom: 10 }}>
+          <span style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", fontSize: 12, fontWeight: 700, color: C.muted }}>Rp</span>
+          <input className="inp" type="number" min="0" value={diskonVal} onChange={e => setDiskonVal(e.target.value)} style={{ paddingLeft: 32 }} />
         </div>
 
-        {/* Items */}
-        <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.border}`, overflow: "hidden", marginBottom: 16 }}>
-          <div style={{ padding: "12px 16px", background: C.primary, display: "flex", justifyContent: "space-between" }}>
-            <span style={{ fontSize: 12, fontWeight: 700, color: "white", textTransform: "uppercase", letterSpacing: "0.5px" }}>Detail Item</span>
-            <span style={{ fontSize: 12, color: "rgba(255,255,255,0.8)" }}>{order.items.length} item</span>
-          </div>
-          {order.items.map((item, i) => {
-            const belumDiukur = item.satuan === "meter" && (!item.luas || item.luas === 0);
+        <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 4 }}>Metode Pembayaran</div>
+        <div className="pay-chips" style={{ marginBottom: 10 }}>
+          {PAY_METHODS.map(m => {
+            const Icon = m.Icon;
             return (
-              <div key={i} style={{ padding: "12px 16px", borderBottom: i < order.items.length - 1 ? `1px solid ${C.border}` : "none", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: C.dark }}>{item.nama}</div>
-                  {belumDiukur ? (
-                    <div style={{ fontSize: 11, color: C.warning, marginTop: 2, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}><Clock size={11} /> Menunggu pengukuran</div>
-                  ) : item.satuan === "meter" ? (
-                    <div style={{ fontSize: 11, color: C.muted, marginTop: 2, display: "flex", alignItems: "center", gap: 4 }}><Ruler size={11} /> {(item.luas || 0).toFixed(2)} m² × {rupiah(item.harga)}/m²</div>
-                  ) : (
-                    <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{item.qty} pcs × {rupiah(item.harga)}</div>
-                  )}
-                </div>
-                <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 14, fontWeight: 700, color: belumDiukur ? C.muted : C.dark, marginLeft: 12 }}>
-                  {belumDiukur ? "—" : rupiah(item.subtotal)}
-                </div>
+              <div key={m.id} className={`pay-chip ${metode === m.id ? "sel" : ""}`} onClick={() => setMetode(m.id)}>
+                <Icon size={16} color={metode === m.id ? C.p700 : C.dark2} />
+                <div className="pay-chip-n" style={{ fontSize: 10 }}>{m.label}</div>
               </div>
             );
           })}
-          {order.diskon?.amount > 0 && (
-            <>
-              <div style={{ padding: "8px 16px", display: "flex", justifyContent: "space-between", borderTop: `1px solid ${C.border}` }}>
-                <span style={{ fontSize: 12, color: C.muted }}>Subtotal</span>
-                <span style={{ fontSize: 12, color: C.muted }}>{rupiah(order.subtotal || order.total + order.diskon.amount)}</span>
+        </div>
+
+        <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 4 }}>Status Bayar</div>
+        <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
+          {STATUS_OPTIONS.map(s => {
+            const cls = statusBadgeClass(s);
+            const isActive = statusBayar === s;
+            return (
+              <div key={s} onClick={() => setStatusBayar(s)}
+                style={{
+                  flex: "1 1 calc(50% - 6px)", padding: "8px 6px", border: `1.5px solid ${isActive ? C.primary : C.border}`,
+                  borderRadius: 8, textAlign: "center", cursor: "pointer", fontSize: 11, fontWeight: 700,
+                  background: isActive ? C.p100 : C.white, color: isActive ? C.p700 : C.muted,
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
+                }}>
+                {statusIcon(s)} {s}
               </div>
-              <div style={{ padding: "8px 16px", display: "flex", justifyContent: "space-between", background: C.successBg }}>
-                <span style={{ fontSize: 12, color: "#15803D", fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
-                  <CheckCircle size={12} /> Diskon {order.diskon.type === "persen" ? `${order.diskon.nilai}%` : ""}
-                </span>
-                <span style={{ fontSize: 12, color: "#15803D", fontWeight: 600 }}>-{rupiah(order.diskon.amount)}</span>
-              </div>
-            </>
-          )}
-          <div style={{ padding: "14px 16px", background: C.primary100, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontSize: 14, fontWeight: 800, color: C.primary700 }}>Total</span>
-            <span style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 20, fontWeight: 800, color: C.primary700 }}>{rupiah(order.total)}</span>
-          </div>
+            );
+          })}
         </div>
 
-        <div style={{ display: "flex", gap: 8, marginBottom: 24, flexWrap: "wrap" }}>
-          <span className={`badge ${order.statusBayar === "Lunas" ? "badge-success" : "badge-warning"}`} style={{ padding: "6px 12px", fontSize: 12, display: "flex", alignItems: "center", gap: 4 }}>
-            {order.statusBayar === "Lunas" ? <><CheckCircle size={12} /> Lunas</> : <><Clock size={12} /> Belum Lunas</>}
-          </span>
-          <span className="badge badge-gray" style={{ padding: "6px 12px", fontSize: 12 }}>{order.metode || "Belum Payment"}</span>
-          <span className="badge badge-primary" style={{ padding: "6px 12px", fontSize: 12 }}>{order.status || "Waiting List"}</span>
-        </div>
+        <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 4 }}>Catatan</div>
+        <input className="inp" placeholder="Catatan (opsional)" value={catatan} onChange={e => setCatatan(e.target.value)} style={{ marginBottom: 14 }} />
 
-        <div style={{ display: "flex", gap: 10, marginBottom: 12 }} className="no-print">
-          {canGoBack && (
-            <button className="btn btn-secondary" style={{ flex: 1, gap: 6 }} onClick={onBack}>
-              <ArrowLeft size={14} /> Kembali
-            </button>
-          )}
-          <button className="btn btn-primary" style={{ flex: 1, gap: 6 }} onClick={() => window.print()}>
-            <Printer size={16} /> Cetak Nota
-          </button>
-        </div>
-
-        {canEdit && (
-          <>
-            <button
-              className="btn btn-ghost btn-full no-print"
-              style={{ marginBottom: 12, gap: 6 }}
-              onClick={() => setShowEdit(true)}
-            >
-              <Edit3 size={16} /> Edit Nota
-            </button>
-
-            {!showDeleteConfirm ? (
-              <button
-                className="btn btn-danger btn-full no-print"
-                style={{ marginBottom: 12, gap: 6 }}
-                onClick={() => setShowDeleteConfirm(true)}
-              >
-                <Trash2 size={16} /> Hapus Nota Ini
-              </button>
-            ) : (
-              <div style={{
-                background: C.dangerBg, border: `2px solid ${C.danger}`,
-                borderRadius: 12, padding: "14px 16px", marginBottom: 12
-              }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: C.danger, marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
-                  <AlertCircle size={16} /> Hapus nota ini secara permanen?
-                </div>
-                <div style={{ fontSize: 12, color: C.muted, marginBottom: 12 }}>
-                  Data transaksi <strong>{notaId}</strong> akan terhapus dan tidak bisa dikembalikan.
-                </div>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button
-                    className="btn btn-secondary btn-sm"
-                    style={{ flex: 1 }}
-                    onClick={() => setShowDeleteConfirm(false)}
-                  >
-                    Batal
-                  </button>
-                  <button
-                    className="btn btn-danger"
-                    style={{ flex: 1, gap: 4 }}
-                    onClick={handleHapus}
-                    disabled={deleting}
-                  >
-                    {deleting ? <><Loader2 size={14} className="spinning" /> Menghapus...</> : <><Trash2 size={14} /> Ya, Hapus</>}
-                  </button>
-                </div>
-              </div>
-            )}
-          </>
-        )}
-
-        <div style={{ textAlign: "center", marginTop: 24, paddingTop: 16, borderTop: `1px dashed ${C.border}` }}>
-          <div style={{ fontSize: 11, color: C.muted }}>Terima kasih telah mempercayai</div>
-          <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 14, fontWeight: 700, color: C.primary, marginTop: 4, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-            <Layers size={14} /> Carpetology
-          </div>
-          <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>Lacak progres cuci Anda dengan mudah</div>
-        </div>
+        <button className="btn btn-p btn-full" onClick={handleSave} disabled={saving || !nama}>
+          {saving ? <><Loader2 size={14} className="spin" /> Menyimpan...</> : <><Save size={14} /> Simpan Perubahan</>}
+        </button>
       </div>
     </div>
   );
 }
 
-// ─── EXPORT MODAL ─────────────────────────────────────────────────────────────
-function ExportModal({ orders, onClose }) {
-  const BULAN_LABEL = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Ags", "Sep", "Okt", "Nov", "Des"];
-  const now = new Date();
-  const [exportMode, setExportMode] = useState("preset"); // "preset" | "custom" | "month"
-  const [preset, setPreset] = useState("today");
-  const [customFrom, setCustomFrom] = useState(now.toISOString().split("T")[0]);
-  const [customTo, setCustomTo] = useState(now.toISOString().split("T")[0]);
-  const [exportBulan, setExportBulan] = useState(now.getMonth());
-  const [exportTahun, setExportTahun] = useState(now.getFullYear());
-  const [exporting, setExporting] = useState(false);
+function ChartTransaksi({ orders, viewMode, exportBulan }) {
+  const [hoverIdx, setHoverIdx] = useState(null);
 
-  const parseOrderDate = (o) => {
-    if (o.timestamp?.toDate) return o.timestamp.toDate();
-    if (o.tanggal) return new Date(o.tanggal);
-    return new Date(0);
-  };
-
-  const getDateRange = () => {
-    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
-    const todayEnd = new Date(); todayEnd.setHours(23, 59, 59, 999);
-
-    if (exportMode === "preset") {
-      if (preset === "today") return { from: todayStart, to: todayEnd, label: `Hari_Ini_${todayStart.getDate()}${BULAN_LABEL[todayStart.getMonth()]}${todayStart.getFullYear()}` };
-      if (preset === "yesterday") {
-        const y = new Date(todayStart); y.setDate(y.getDate() - 1);
-        const ye = new Date(y); ye.setHours(23, 59, 59, 999);
-        return { from: y, to: ye, label: `Kemarin_${y.getDate()}${BULAN_LABEL[y.getMonth()]}${y.getFullYear()}` };
-      }
-      if (preset === "week") {
-        const w = new Date(todayStart); w.setDate(w.getDate() - 6);
-        return { from: w, to: todayEnd, label: `7Hari_${w.getDate()}${BULAN_LABEL[w.getMonth()]}-${todayStart.getDate()}${BULAN_LABEL[todayStart.getMonth()]}${todayStart.getFullYear()}` };
-      }
-      if (preset === "month") {
-        const m = new Date(todayStart.getFullYear(), todayStart.getMonth(), 1);
-        return { from: m, to: todayEnd, label: `BulanIni_${BULAN_LABEL[todayStart.getMonth()]}${todayStart.getFullYear()}` };
-      }
-    }
-    if (exportMode === "custom") {
-      const from = new Date(customFrom); from.setHours(0, 0, 0, 0);
-      const to = new Date(customTo); to.setHours(23, 59, 59, 999);
-      const fLabel = `${String(from.getDate()).padStart(2, "0")}${BULAN_LABEL[from.getMonth()]}`;
-      const tLabel = `${String(to.getDate()).padStart(2, "0")}${BULAN_LABEL[to.getMonth()]}${to.getFullYear()}`;
-      return { from, to, label: `${fLabel}-${tLabel}` };
-    }
-    if (exportMode === "month") {
-      const from = new Date(exportTahun, exportBulan, 1);
-      const to = new Date(exportTahun, exportBulan + 1, 0, 23, 59, 59, 999);
-      return { from, to, label: `${BULAN_LABEL[exportBulan]}_${exportTahun}` };
-    }
-  };
-
-  const getFilteredOrders = () => {
-    const range = getDateRange();
-    if (!range) return [];
-    return orders.filter((o) => {
-      const d = parseOrderDate(o);
-      return d >= range.from && d <= range.to;
-    }).sort((a, b) => parseOrderDate(a) - parseOrderDate(b));
-  };
-
-  const preview = getFilteredOrders();
-  const previewRevenue = preview.filter(o => o.statusBayar === "Lunas").reduce((s, o) => s + o.total, 0);
-  const previewPiutang = preview.filter(o => o.statusBayar !== "Lunas").reduce((s, o) => s + o.total, 0);
-
-  const PRESETS = [
-    { id: "today", label: "Hari Ini" },
-    { id: "yesterday", label: "Kemarin" },
-    { id: "week", label: "7 Hari Terakhir" },
-    { id: "month", label: "Bulan Ini" },
-  ];
-
-  const handleExport = async () => {
-    const range = getDateRange();
-    const data = getFilteredOrders();
-    if (data.length === 0) return;
-    setExporting(true);
-    try {
-      const XLSX = await import("xlsx");
-      const wb = XLSX.utils.book_new();
-
-      // Sheet 1: Transaksi
-      const sheet1 = data.map((o) => ({
-        "Tanggal": o.tanggal || "",
-        "Nota ID": o.notaId || o.id,
-        "Customer": o.customerNama,
-        "No. HP": o.customerHp,
-        "Item": (o.items || []).map((it) =>
-          it.satuan === "meter"
-            ? `${it.nama} (${(parseFloat(it.luas) || 0).toFixed(1)}m²)`
-            : `${it.nama} (${it.qty}x)`
-        ).join(" | "),
-        "Subtotal": o.subtotal || o.total,
-        "Diskon (Rp)": o.diskon?.amount || 0,
-        "Total": o.total,
-        "Metode": o.metode,
-        "Status Bayar": o.statusBayar,
-        "Catatan": o.catatan || "",
-      }));
-      const ws1 = XLSX.utils.json_to_sheet(sheet1);
-      ws1["!cols"] = [
-        { wch: 14 }, { wch: 16 }, { wch: 22 }, { wch: 16 },
-        { wch: 40 }, { wch: 14 }, { wch: 12 }, { wch: 14 },
-        { wch: 12 }, { wch: 14 }, { wch: 24 },
-      ];
-      XLSX.utils.book_append_sheet(wb, ws1, "Transaksi");
-
-      // Sheet 2: Rekap per Hari
-      const byDay = {};
-      data.forEach((o) => {
-        const d = parseOrderDate(o);
-        const key = `${String(d.getDate()).padStart(2, "0")} ${BULAN_LABEL[d.getMonth()]} ${d.getFullYear()}`;
-        if (!byDay[key]) byDay[key] = { tanggal: key, jumlah: 0, lunas: 0, belum: 0, total: 0 };
-        byDay[key].jumlah++;
-        byDay[key].total += o.total;
-        if (o.statusBayar === "Lunas") byDay[key].lunas += o.total;
-        else byDay[key].belum += o.total;
+  // Generate data points berdasarkan viewMode
+  const data = (() => {
+    if (viewMode === "minggu") {
+      // 7 hari terakhir
+      const days = Array.from({ length: 7 }, (_, i) => {
+        const d = new Date();
+        d.setDate(d.getDate() - (6 - i));
+        return {
+          label: d.toLocaleDateString("id-ID", { weekday: "short" }),
+          date: d.toISOString().split("T")[0],
+          value: 0,
+        };
       });
-      const sheet2 = Object.values(byDay).map((r) => ({
-        "Tanggal": r.tanggal,
-        "Jumlah Transaksi": r.jumlah,
-        "Omzet": r.total,
-        "Lunas": r.lunas,
-        "Piutang": r.belum,
-      }));
-      // Tambah baris total
-      sheet2.push({
-        "Tanggal": "TOTAL",
-        "Jumlah Transaksi": data.length,
-        "Omzet": previewRevenue + previewPiutang,
-        "Lunas": previewRevenue,
-        "Piutang": previewPiutang,
+      orders.forEach(o => {
+        const d = o.timestamp?.toDate ? o.timestamp.toDate() : new Date(o.tanggal || 0);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+        const found = days.find(x => x.date === key);
+        if (found) found.value += o.total;
       });
-      const ws2 = XLSX.utils.json_to_sheet(sheet2);
-      ws2["!cols"] = [{ wch: 20 }, { wch: 20 }, { wch: 16 }, { wch: 16 }, { wch: 16 }];
-      XLSX.utils.book_append_sheet(wb, ws2, "Rekap Harian");
-
-      XLSX.writeFile(wb, `Carpetology_${range.label}.xlsx`);
-      onClose();
-    } catch (e) {
-      alert("Gagal export: " + e.message);
-    } finally {
-      setExporting(false);
+      return days;
     }
+
+    if (viewMode === "bulan") {
+      // Per hari dalam bulan yang dipilih
+      const [year, month] = exportBulan.split("-").map(Number);
+      const daysInMonth = new Date(year, month, 0).getDate();
+      const days = Array.from({ length: daysInMonth }, (_, i) => ({
+        label: String(i + 1),
+        value: 0,
+      }));
+      orders.forEach(o => {
+        const d = o.timestamp?.toDate ? o.timestamp.toDate() : new Date(o.tanggal || 0);
+        if (d.getFullYear() === year && d.getMonth() + 1 === month) {
+          days[d.getDate() - 1].value += o.total;
+        }
+      });
+      return days;
+    }
+
+    // Semua: per bulan (12 bulan terakhir)
+    const months = Array.from({ length: 12 }, (_, i) => {
+      const d = new Date();
+      d.setMonth(d.getMonth() - (11 - i));
+      return {
+        label: BULAN[d.getMonth()],
+        month: d.getMonth(),
+        year: d.getFullYear(),
+        value: 0,
+      };
+    });
+    orders.forEach(o => {
+      const d = o.timestamp?.toDate ? o.timestamp.toDate() : new Date(o.tanggal || 0);
+      const found = months.find(m => m.month === d.getMonth() && m.year === d.getFullYear());
+      if (found) found.value += o.total;
+    });
+    return months;
+  })();
+
+  const maxVal = Math.max(...data.map(d => d.value), 1);
+  const W = 340, H = 110, padL = 8, padR = 8, padT = 10, padB = 28;
+  const chartW = W - padL - padR;
+  const chartH = H - padT - padB;
+  const barW = Math.max(4, (chartW / data.length) - 3);
+
+  const fmtShort = (n) => {
+    if (n >= 1000000) return (n / 1000000).toFixed(1) + "jt";
+    if (n >= 1000) return (n / 1000).toFixed(0) + "rb";
+    return String(n);
   };
+
+  const hasData = data.some(d => d.value > 0);
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(26,46,53,0.6)", display: "flex", alignItems: "flex-end" }}>
-      <div style={{ background: C.white, width: "100%", borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: "88vh", display: "flex", flexDirection: "column", animation: "slideUp .25s ease-out" }}>
-
-        {/* Header */}
-        <div style={{ padding: "16px 20px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
-          <div>
-            <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 16, fontWeight: 700, color: C.dark, display: "flex", alignItems: "center", gap: 8 }}>
-              <Download size={18} color={C.primary} /> Export Excel
-            </div>
-            <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>Pilih rentang tanggal yang ingin diexport</div>
-          </div>
-          <button onClick={onClose} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, width: 32, height: 32, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: C.muted }}>
-            <X size={16} />
-          </button>
+    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: "12px 10px 8px", marginBottom: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: ".5px" }}>
+          Grafik Omzet
         </div>
-
-        <div style={{ overflowY: "auto", flex: 1, padding: "16px 20px" }}>
-
-          {/* Mode selector */}
-          <div className="section-header">Tipe Rentang</div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 20 }}>
-            {[
-              { id: "preset", label: "Preset Cepat" },
-              { id: "custom", label: "Pilih Tanggal" },
-              { id: "month", label: "Per Bulan" },
-            ].map((m) => (
-              <div
-                key={m.id}
-                onClick={() => setExportMode(m.id)}
-                style={{
-                  padding: "10px 8px", borderRadius: 10, cursor: "pointer", textAlign: "center",
-                  border: `2px solid ${exportMode === m.id ? C.primary : C.border}`,
-                  background: exportMode === m.id ? C.primary100 : C.white,
-                  fontSize: 12, fontWeight: 700,
-                  color: exportMode === m.id ? C.primary700 : C.muted,
-                  transition: "all .15s",
-                }}
-              >
-                {m.label}
-              </div>
-            ))}
+        {hoverIdx !== null && data[hoverIdx] && (
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.p700, fontFamily: "'Space Grotesk',sans-serif" }}>
+            {data[hoverIdx].label} · {rp(data[hoverIdx].value)}
           </div>
-
-          {/* Preset options */}
-          {exportMode === "preset" && (
-            <>
-              <div className="section-header">Pilih Periode</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 20 }}>
-                {PRESETS.map((p) => (
-                  <div
-                    key={p.id}
-                    onClick={() => setPreset(p.id)}
-                    style={{
-                      padding: "12px 14px", borderRadius: 12, cursor: "pointer",
-                      border: `2px solid ${preset === p.id ? C.primary : C.border}`,
-                      background: preset === p.id ? C.primary100 : C.white,
-                      fontSize: 13, fontWeight: 700,
-                      color: preset === p.id ? C.primary700 : C.dark,
-                      transition: "all .15s", textAlign: "center",
-                    }}
-                  >
-                    {p.label}
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-
-          {/* Custom date range */}
-          {exportMode === "custom" && (
-            <>
-              <div className="section-header">Rentang Tanggal</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 20 }}>
-                <div>
-                  <div style={{ fontSize: 11, color: C.muted, fontWeight: 600, marginBottom: 6, textTransform: "uppercase" }}>Dari Tanggal</div>
-                  <input
-                    type="date"
-                    value={customFrom}
-                    max={customTo}
-                    onChange={(e) => setCustomFrom(e.target.value)}
-                    style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: `1.5px solid ${C.border}`, fontSize: 13, fontFamily: "inherit", color: C.dark, outline: "none", boxSizing: "border-box" }}
-                  />
-                </div>
-                <div>
-                  <div style={{ fontSize: 11, color: C.muted, fontWeight: 600, marginBottom: 6, textTransform: "uppercase" }}>Sampai Tanggal</div>
-                  <input
-                    type="date"
-                    value={customTo}
-                    min={customFrom}
-                    max={now.toISOString().split("T")[0]}
-                    onChange={(e) => setCustomTo(e.target.value)}
-                    style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: `1.5px solid ${C.border}`, fontSize: 13, fontFamily: "inherit", color: C.dark, outline: "none", boxSizing: "border-box" }}
-                  />
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* Month picker */}
-          {exportMode === "month" && (
-            <>
-              <div className="section-header">Pilih Bulan</div>
-              <div style={{ display: "flex", gap: 10, marginBottom: 12, alignItems: "center" }}>
-                <select
-                  value={exportBulan}
-                  onChange={(e) => setExportBulan(Number(e.target.value))}
-                  style={{ flex: 1, padding: "10px 12px", borderRadius: 10, border: `1.5px solid ${C.border}`, fontSize: 13, fontFamily: "inherit", background: C.white, color: C.dark, outline: "none" }}
-                >
-                  {BULAN_LABEL.map((b, i) => <option key={i} value={i}>{b}</option>)}
-                </select>
-                <select
-                  value={exportTahun}
-                  onChange={(e) => setExportTahun(Number(e.target.value))}
-                  style={{ width: 100, padding: "10px 12px", borderRadius: 10, border: `1.5px solid ${C.border}`, fontSize: 13, fontFamily: "inherit", background: C.white, color: C.dark, outline: "none" }}
-                >
-                  {[2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
-                </select>
-              </div>
-              {/* Quick month chips */}
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 20 }}>
-                {BULAN_LABEL.map((b, i) => (
-                  <div
-                    key={i}
-                    className={`tab-chip ${exportBulan === i ? "active" : ""}`}
-                    style={{ padding: "4px 10px", fontSize: 11 }}
-                    onClick={() => setExportBulan(i)}
-                  >
-                    {b}
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-
-          {/* Preview stats */}
-          <div className="section-header">Preview Data</div>
-          <div style={{
-            background: preview.length > 0 ? C.primary50 : C.surface,
-            border: `1.5px solid ${preview.length > 0 ? C.primary200 : C.border}`,
-            borderRadius: 12, padding: "14px 16px", marginBottom: 8
-          }}>
-            {preview.length === 0 ? (
-              <div style={{ textAlign: "center", color: C.muted, fontSize: 13, padding: "8px 0" }}>
-                Tidak ada transaksi di periode ini
-              </div>
-            ) : (
-              <>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 10 }}>
-                  <div style={{ textAlign: "center" }}>
-                    <div style={{ fontSize: 11, color: C.muted, marginBottom: 2 }}>Transaksi</div>
-                    <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 20, fontWeight: 800, color: C.dark }}>{preview.length}</div>
-                  </div>
-                  <div style={{ textAlign: "center" }}>
-                    <div style={{ fontSize: 11, color: "#15803D", marginBottom: 2 }}>Lunas</div>
-                    <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 13, fontWeight: 700, color: "#15803D" }}>{rupiah(previewRevenue)}</div>
-                  </div>
-                  <div style={{ textAlign: "center" }}>
-                    <div style={{ fontSize: 11, color: "#D97706", marginBottom: 2 }}>Piutang</div>
-                    <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 13, fontWeight: 700, color: "#D97706" }}>{rupiah(previewPiutang)}</div>
-                  </div>
-                </div>
-                <div style={{ background: C.primary100, borderRadius: 8, padding: "8px 12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: C.primary700 }}>Total Omzet</span>
-                  <span style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 15, fontWeight: 800, color: C.primary700 }}>{rupiah(previewRevenue + previewPiutang)}</span>
-                </div>
-                <div style={{ fontSize: 11, color: C.muted, marginTop: 10, display: "flex", alignItems: "center", gap: 4 }}>
-                  <FileText size={11} /> File berisi 2 sheet: <strong>Transaksi</strong> (detail) + <strong>Rekap Harian</strong>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div style={{ padding: "12px 20px 20px", borderTop: `1px solid ${C.border}`, flexShrink: 0 }}>
-          <button
-            className="btn btn-primary btn-full"
-            onClick={handleExport}
-            disabled={preview.length === 0 || exporting}
-            style={{ gap: 6 }}
-          >
-            {exporting
-              ? <><Loader2 size={16} className="spinning" /> Mengexport...</>
-              : <><Download size={16} /> Export {preview.length} Transaksi ke Excel</>
-            }
-          </button>
-        </div>
+        )}
       </div>
+
+      {!hasData ? (
+        <div style={{ textAlign: "center", padding: "24px 0", color: C.muted, fontSize: 12 }}>
+          Belum ada data
+        </div>
+      ) : (
+        <svg
+          viewBox={`0 0 ${W} ${H}`}
+          width="100%"
+          style={{ display: "block", overflow: "visible" }}
+        >
+          {/* Grid lines */}
+          {[0.25, 0.5, 0.75, 1].map((r, i) => (
+            <line
+              key={i}
+              x1={padL} y1={padT + chartH * (1 - r)}
+              x2={W - padR} y2={padT + chartH * (1 - r)}
+              stroke={C.border} strokeWidth="0.5" strokeDasharray="3,3"
+            />
+          ))}
+
+          {/* Max label */}
+          <text x={padL} y={padT - 3} fontSize="8" fill={C.muted}>{fmtShort(maxVal)}</text>
+
+          {/* Bars */}
+          {data.map((d, i) => {
+            const barH = Math.max(2, (d.value / maxVal) * chartH);
+            const x = padL + (i / data.length) * chartW + (chartW / data.length - barW) / 2;
+            const y = padT + chartH - barH;
+            const isHover = hoverIdx === i;
+            const showLabel = data.length <= 12 || i % Math.ceil(data.length / 12) === 0;
+
+            return (
+              <g key={i}
+                onMouseEnter={() => setHoverIdx(i)}
+                onMouseLeave={() => setHoverIdx(null)}
+                onTouchStart={() => setHoverIdx(i)}
+                onTouchEnd={() => setTimeout(() => setHoverIdx(null), 1200)}
+                style={{ cursor: "pointer" }}
+              >
+                {/* Hover area */}
+                <rect
+                  x={padL + (i / data.length) * chartW}
+                  y={padT}
+                  width={chartW / data.length}
+                  height={chartH}
+                  fill="transparent"
+                />
+                {/* Bar */}
+                <rect
+                  x={x} y={y}
+                  width={barW} height={barH}
+                  rx="3"
+                  fill={isHover ? C.p600 : d.value > 0 ? C.primary : C.border}
+                  opacity={isHover ? 1 : 0.85}
+                />
+                {/* Value label saat hover */}
+                {isHover && d.value > 0 && (
+                  <text
+                    x={x + barW / 2} y={y - 4}
+                    fontSize="8" fill={C.p700}
+                    textAnchor="middle" fontWeight="700"
+                  >
+                    {fmtShort(d.value)}
+                  </text>
+                )}
+                {/* X label */}
+                {showLabel && (
+                  <text
+                    x={x + barW / 2}
+                    y={H - 4}
+                    fontSize="8" fill={isHover ? C.p700 : C.muted}
+                    textAnchor="middle" fontWeight={isHover ? "700" : "400"}
+                  >
+                    {d.label}
+                  </text>
+                )}
+              </g>
+            );
+          })}
+        </svg>
+      )}
     </div>
   );
 }
 
-// ─── RIWAYAT PAGE (UPDATED) ───────────────────────────────────────────────────
-function RiwayatPage({ orders, loadingOrders, onViewNota }) {
+// ─── RIWAYAT PAGE ─────────────────────────────────────────────────────────────
+function RiwayatPage({ orders, loadingOrders, onViewNota, isAdmin, hasMore, onLoadMore }) {
   const [search, setSearch] = useState("");
-  const [filterMetode, setFilterMetode] = useState("Semua");
-  const [viewMode, setViewMode] = useState("date");
+  const [filterStatus, setFilterStatus] = useState("Semua");
+  const [filterLayanan, setFilterLayanan] = useState("Semua");
+  const [toast, setToast] = useState("");
+  const [editOrder, setEditOrder] = useState(null);
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [viewMode, setViewMode] = useState("minggu");
   const [showExport, setShowExport] = useState(false);
+  const [exportMode, setExportMode] = useState("bulan");
+  const [exportBulan, setExportBulan] = useState(() => new Date().toISOString().slice(0, 7));
+  const [exportFrom, setExportFrom] = useState("");
+  const [exportTo, setExportTo] = useState("");
+  const [lunasLoading, setLunasLoading] = useState(null);
+  // [FIX 🟡] konfirmasiLunas state untuk modal — ganti window.confirm
+  const [konfirmasiLunas, setKonfirmasiLunas] = useState(null);
+  const [konfirmasiPembayaran, setKonfirmasiPembayaran] = useState(null);
 
-  const BULAN_LABEL = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Ags", "Sep", "Okt", "Nov", "Des"];
-  const HARI_LABEL = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
-  const now = new Date();
 
-  const [selectedDate, setSelectedDate] = useState(() => {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    return d;
+  const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(""), 2500); };
+
+  const handleExport = () => {
+    let data = orders;
+    if (exportMode === "bulan") {
+      data = orders.filter(o => {
+        const d = o.timestamp?.toDate ? o.timestamp.toDate() : new Date(o.tanggal || 0);
+        return d.toISOString().slice(0, 7) === exportBulan;
+      });
+    } else {
+      const from = exportFrom ? new Date(exportFrom) : null;
+      const to = exportTo ? new Date(exportTo + "T23:59:59") : null;
+      data = orders.filter(o => {
+        const d = o.timestamp?.toDate ? o.timestamp.toDate() : new Date(o.tanggal || 0);
+        if (from && d < from) return false;
+        if (to && d > to) return false;
+        return true;
+      });
+    }
+
+    const rows = data.map(o => ({
+      "Nota ID": o.notaId,
+      "Tanggal": fmtDate(o.timestamp || o.tanggal),
+      "Customer": o.customerNama,
+      "No HP": o.customerHp,
+      "Layanan": o.layananType === "homeservice" ? "Home Service" : "Workshop",
+      "Item": (o.items || []).map(it => `${it.qty || 1}× ${it.nama}`).join(", "),
+      "Subtotal": o.subtotal || o.total,
+      "Diskon": o.diskon?.amount || 0,
+      "Deposit": o.dp?.nominal || 0,
+      "Total Tagihan": o.total,
+      "Sisa Bayar": o.total - (o.dp?.nominal || 0),
+      "Metode": o.metode,
+      "Status": o.statusBayar,
+      "Catatan": o.catatan || "",
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws["!cols"] = [
+      { wch: 16 }, { wch: 14 }, { wch: 20 }, { wch: 14 }, { wch: 12 }, { wch: 35 },
+      { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 20 }
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Transaksi");
+    const label = exportMode === "bulan" ? exportBulan : `${exportFrom}_${exportTo}`;
+    XLSX.writeFile(wb, `Carpetology_${label}.xlsx`);
+    setShowExport(false);
+  };
+
+  // [FIX 🟡] handleTandaiLunas sekarang dipanggil dari modal konfirmasi
+  const doTandaiLunas = async (order) => {
+    setLunasLoading(order.notaId);
+    try {
+      const q = query(collection(db, "transactions"), where("notaId", "==", order.notaId));
+      const snap = await getDocs(q);
+      for (const d of snap.docs) await updateDoc(doc(db, "transactions", d.id), { statusBayar: "Lunas" });
+      showToast("Status diupdate ke Lunas ✓");
+    } catch (e) {
+      console.error(e);
+      showToast("Gagal update status");
+    } finally {
+      setLunasLoading(null);
+      setKonfirmasiLunas(null);
+    }
+  };
+
+  const doKonfirmasiPembayaran = async (order, catatan) => {
+    setLunasLoading(order.notaId);
+    try {
+      const q = query(collection(db, "transactions"), where("notaId", "==", order.notaId));
+      const snap = await getDocs(q);
+      for (const d of snap.docs) {
+        await updateDoc(doc(db, "transactions", d.id), {
+          statusBayar: "Lunas",
+          konfirmasi: {
+            timestamp: serverTimestamp(),
+            catatan: catatan || "",
+            confirmedBy: "kasir",
+          },
+        });
+      }
+      showToast("Pembayaran dikonfirmasi ✓");
+    } catch (e) {
+      console.error(e);
+      showToast("Gagal konfirmasi pembayaran");
+    } finally {
+      setLunasLoading(null);
+      setKonfirmasiPembayaran(null);
+    }
+  };
+
+  const handleEditSave = async (order, changes) => {
+    try {
+      const q = query(collection(db, "transactions"), where("notaId", "==", order.notaId));
+      const snap = await getDocs(q);
+      for (const d of snap.docs) {
+        const subtotal = order.subtotal || order.total;
+        const diskonAmt = changes.diskonAmt || 0;
+        const newTotal = subtotal - diskonAmt;
+        await updateDoc(doc(db, "transactions", d.id), {
+          nama: changes.nama, hp: changes.hp,
+          metode_pembayaran: changes.metode, statusBayar: changes.statusBayar,
+          catatan: changes.catatan,
+          diskon: { type: "nominal", nilai: diskonAmt, amount: diskonAmt },
+          total_harga: newTotal,
+        });
+      }
+      showToast("Nota berhasil diupdate");
+    } catch (e) { console.error(e); showToast("Gagal update nota"); }
+  };
+
+  const handleDelete = async (order) => {
+    try {
+      const q = query(collection(db, "transactions"), where("notaId", "==", order.notaId));
+      const snap = await getDocs(q);
+      for (const d of snap.docs) await deleteDoc(doc(db, "transactions", d.id));
+      setDeleteConfirm(null);
+      showToast("Nota berhasil dihapus");
+    } catch (e) { console.error(e); showToast("Gagal hapus nota"); }
+  };
+
+  const STATUS_OPTS = ["Semua", "Lunas", "Menunggu Konfirmasi", "DP", "Belum Lunas"];
+  const LAYANAN_OPTS = ["Semua", "Workshop", "Home Service"];
+
+  const filtered = orders.filter(o => {
+    const ms = !search
+      || (o.customerNama || "").toLowerCase().includes(search.toLowerCase())
+      || (o.customerHp || "").includes(search)
+      || (o.notaId || "").toLowerCase().includes(search.toLowerCase());
+    const mst = filterStatus === "Semua" || o.statusBayar === filterStatus;
+    const mlay = filterLayanan === "Semua"
+      || (filterLayanan === "Home Service" && o.layananType === "homeservice")
+      || (filterLayanan === "Workshop" && o.layananType !== "homeservice");
+    let mDate = true;
+    if (viewMode === "minggu") {
+      const d = o.timestamp?.toDate ? o.timestamp.toDate() : new Date(o.tanggal || 0);
+      const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 6); weekAgo.setHours(0, 0, 0, 0);
+      mDate = d >= weekAgo;
+    } else if (viewMode === "bulan") {
+      const d = o.timestamp?.toDate ? o.timestamp.toDate() : new Date(o.tanggal || 0);
+      mDate = d.getFullYear() === Number(exportBulan.split("-")[0]) &&
+        d.getMonth() + 1 === Number(exportBulan.split("-")[1]);
+    }
+    return ms && mst && mlay && mDate;
   });
 
-  const metodeOptions = ["Semua", "Tunai", "QRIS", "Transfer", "Belum Payment"];
-
-  const parseOrderDate = (o) => {
-    if (o.timestamp?.toDate) return o.timestamp.toDate();
-    if (o.tanggal) return new Date(o.tanggal);
-    return new Date(0);
-  };
-
-  const isSameDay = (d1, d2) =>
-    d1.getDate() === d2.getDate() &&
-    d1.getMonth() === d2.getMonth() &&
-    d1.getFullYear() === d2.getFullYear();
-
-  const formatDateLabel = (date) => {
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
-    if (isSameDay(date, today)) return "Hari Ini";
-    if (isSameDay(date, yesterday)) return "Kemarin";
-    return `${HARI_LABEL[date.getDay()]}, ${date.getDate()} ${BULAN_LABEL[date.getMonth()]} ${date.getFullYear()}`;
-  };
-
-  const formatDateShort = (date) =>
-    `${String(date.getDate()).padStart(2, "0")}/${String(date.getMonth() + 1).padStart(2, "0")}/${date.getFullYear()}`;
-
-  const goDay = (delta) => {
-    const d = new Date(selectedDate);
-    d.setDate(d.getDate() + delta);
-    setSelectedDate(d);
-  };
-
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
-  const isToday = isSameDay(selectedDate, today);
-
-  const filteredByDate = orders
-    .filter((o) => isSameDay(parseOrderDate(o), selectedDate))
-    .filter((o) => { const s = search.toLowerCase(); return (o.customerNama || "").toLowerCase().includes(s) || (o.customerHp || "").includes(s) || (o.id || "").toLowerCase().includes(s); })
-    .filter((o) => filterMetode === "Semua" || o.metode === filterMetode)
-    .sort((a, b) => parseOrderDate(b) - parseOrderDate(a));
-
-  const buildGrouped = () => {
-    const base = orders
-      .filter((o) => { const s = search.toLowerCase(); return (o.customerNama || "").toLowerCase().includes(s) || (o.customerHp || "").includes(s); })
-      .filter((o) => filterMetode === "Semua" || o.metode === filterMetode);
-    const groups = {};
-    base.forEach((o) => {
-      const d = parseOrderDate(o);
-      d.setHours(0, 0, 0, 0);
-      const key = d.getTime();
-      if (!groups[key]) groups[key] = { date: new Date(d), items: [] };
-      groups[key].items.push(o);
-    });
-    return Object.values(groups).sort((a, b) => b.date - a.date);
-  };
-
-  const totalRevenue = filteredByDate.filter(o => o.statusBayar === "Lunas").reduce((s, o) => s + o.total, 0);
-  const totalPiutang = filteredByDate.filter(o => o.statusBayar !== "Lunas").reduce((s, o) => s + o.total, 0);
-  const grouped = viewMode === "grouped" ? buildGrouped() : null;
+  const omzetFiltered = filtered.reduce((s, o) => s + o.total, 0);
+  const piutangFiltered = filtered.filter(o => !isStatusLunas(o.statusBayar)).reduce((s, o) => s + o.total, 0);
 
   return (
-    <div className="animate-in" style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      {showExport && <ExportModal orders={orders} onClose={() => setShowExport(false)} />}
+    <div className="ani sc">
+      {toast && <div className="toast"><CheckCircle size={13} /> {toast}</div>}
 
-      <div className="step-content" style={{ flex: 1 }}>
-        {/* Top row: view toggle + export */}
-        <div style={{ display: "flex", gap: 8, marginBottom: 14, alignItems: "center" }}>
-          <button onClick={() => setViewMode("date")} className={`btn btn-sm ${viewMode === "date" ? "btn-primary" : "btn-secondary"}`} style={{ flex: 1 }}>
-            Per Tanggal
-          </button>
-          <button onClick={() => setViewMode("grouped")} className={`btn btn-sm ${viewMode === "grouped" ? "btn-primary" : "btn-secondary"}`} style={{ flex: 1 }}>
-            Grup Hari
-          </button>
-          <button onClick={() => setShowExport(true)} className="btn btn-ghost btn-sm" style={{ gap: 4, flexShrink: 0 }}>
-            <Download size={14} /> Excel
-          </button>
-        </div>
+      {editOrder && <EditNotaModal order={editOrder} onClose={() => setEditOrder(null)} onSave={handleEditSave} />}
 
-        {viewMode === "date" && (
-          <>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, background: C.surface, borderRadius: 12, padding: "8px 12px", border: `1.5px solid ${C.border}` }}>
-              <button onClick={() => goDay(-1)} style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 8, width: 32, height: 32, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: C.dark, flexShrink: 0 }}>
-                <ArrowLeft size={14} />
-              </button>
-              <div style={{ flex: 1, textAlign: "center" }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>{formatDateLabel(selectedDate)}</div>
-                <div style={{ fontSize: 11, color: C.muted }}>{formatDateShort(selectedDate)}</div>
+      {/* [FIX 🟡] Modal konfirmasi lunas — ganti window.confirm */}
+      {konfirmasiLunas && (
+        <KonfirmasiLunasModal
+          order={konfirmasiLunas}
+          loading={lunasLoading === konfirmasiLunas.notaId}
+          onConfirm={() => doTandaiLunas(konfirmasiLunas)}
+          onClose={() => !lunasLoading && setKonfirmasiLunas(null)}
+        />
+      )}
+
+      {konfirmasiPembayaran && (
+        <KonfirmasiPembayaranModal
+          order={konfirmasiPembayaran}
+          loading={lunasLoading === konfirmasiPembayaran.notaId}
+          onConfirm={(catatan) => doKonfirmasiPembayaran(konfirmasiPembayaran, catatan)}
+          onClose={() => !lunasLoading && setKonfirmasiPembayaran(null)}
+        />
+      )}
+
+      {deleteConfirm && (
+        <div className="modal-overlay" onClick={() => setDeleteConfirm(null)}>
+          <div className="modal-sheet" onClick={e => e.stopPropagation()}>
+            <div style={{ textAlign: "center", padding: "8px 0 16px" }}>
+              <div style={{ width: 50, height: 50, background: C.redBg, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px" }}>
+                <Trash2 size={22} color={C.red} />
               </div>
-              <button onClick={() => goDay(1)} disabled={isToday} style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 8, width: 32, height: 32, cursor: isToday ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: isToday ? C.border : C.dark, flexShrink: 0, opacity: isToday ? 0.4 : 1 }}>
-                <ChevronRight size={14} />
+              <div style={{ fontSize: 15, fontWeight: 800, color: C.dark, marginBottom: 6 }}>Hapus Nota?</div>
+              <div style={{ fontSize: 12, color: C.muted, marginBottom: 4 }}>
+                <strong>{deleteConfirm.notaId}</strong> · {deleteConfirm.customerNama}
+              </div>
+              <div style={{ fontSize: 11, color: C.red }}>Tindakan ini tidak dapat dibatalkan</div>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn btn-s" style={{ flex: 1 }} onClick={() => setDeleteConfirm(null)}>Batal</button>
+              <button className="btn btn-red" style={{ flex: 1 }} onClick={() => handleDelete(deleteConfirm)}>
+                <Trash2 size={14} /> Hapus
               </button>
             </div>
+          </div>
+        </div>
+      )}
 
-            <div style={{ display: "flex", gap: 8, marginBottom: 14, alignItems: "center" }}>
-              {[{ label: "Kemarin", date: yesterday }, { label: "Hari Ini", date: today }].map(({ label, date }) => (
-                <div key={label} className={`tab-chip ${isSameDay(selectedDate, date) ? "active" : ""}`} onClick={() => setSelectedDate(new Date(date))}>{label}</div>
+      {showExport && (
+        <div className="modal-overlay" onClick={() => setShowExport(false)}>
+          <div className="modal-sheet" onClick={e => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <div style={{ fontSize: 14, fontWeight: 800, color: C.dark, display: "flex", alignItems: "center", gap: 6 }}>
+                <Download size={15} color={C.primary} /> Export Excel
+              </div>
+              <button onClick={() => setShowExport(false)} style={{ background: "none", border: "none", cursor: "pointer", color: C.muted }}><X size={18} /></button>
+            </div>
+            <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+              {[["bulan", "Per Bulan"], ["range", "Rentang Tanggal"]].map(([v, l]) => (
+                <div key={v} onClick={() => setExportMode(v)}
+                  style={{ flex: 1, padding: "8px", border: `1.5px solid ${exportMode === v ? C.primary : C.border}`, borderRadius: 8, textAlign: "center", cursor: "pointer", fontSize: 12, fontWeight: 700, background: exportMode === v ? C.p100 : C.white, color: exportMode === v ? C.p700 : C.muted }}>
+                  {l}
+                </div>
               ))}
-              <input
-                type="date"
-                max={today.toISOString().split("T")[0]}
-                value={selectedDate.toISOString().split("T")[0]}
-                onChange={(e) => { const d = new Date(e.target.value); d.setHours(0, 0, 0, 0); setSelectedDate(d); }}
-                style={{ marginLeft: "auto", padding: "5px 10px", borderRadius: 20, border: `1.5px solid ${C.border}`, fontSize: 12, fontFamily: "inherit", color: C.dark, background: C.white, outline: "none", cursor: "pointer" }}
-              />
             </div>
-
-            <div className="mini-stats" style={{ marginBottom: 14 }}>
-              <div className="mini-stat"><div className="mini-stat-label">Transaksi</div><div className="mini-stat-value">{filteredByDate.length}</div></div>
-              <div className="mini-stat"><div className="mini-stat-label">Omzet</div><div className="mini-stat-value" style={{ fontSize: 13 }}>{rupiah(totalRevenue + totalPiutang)}</div></div>
-              <div className="mini-stat"><div className="mini-stat-label" style={{ color: "#15803D", display: "flex", alignItems: "center", gap: 4 }}><CheckCircle size={11} /> Lunas</div><div className="mini-stat-value" style={{ color: "#15803D", fontSize: 13 }}>{rupiah(totalRevenue)}</div></div>
-              <div className="mini-stat"><div className="mini-stat-label" style={{ color: "#D97706", display: "flex", alignItems: "center", gap: 4 }}><Clock size={11} /> Piutang</div><div className="mini-stat-value" style={{ color: "#D97706", fontSize: 13 }}>{rupiah(totalPiutang)}</div></div>
+            {exportMode === "bulan" ? (
+              <>
+                <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 6 }}>Pilih Bulan</div>
+                <input type="month" value={exportBulan} onChange={e => setExportBulan(e.target.value)} className="inp" style={{ marginBottom: 16 }} />
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 6 }}>Dari Tanggal</div>
+                <input type="date" value={exportFrom} onChange={e => setExportFrom(e.target.value)} className="inp" style={{ marginBottom: 10 }} />
+                <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 6 }}>Sampai Tanggal</div>
+                <input type="date" value={exportTo} onChange={e => setExportTo(e.target.value)} className="inp" style={{ marginBottom: 16 }} />
+              </>
+            )}
+            <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px 12px", marginBottom: 14, fontSize: 12, color: C.muted, display: "flex", justifyContent: "space-between" }}>
+              <span>Estimasi data</span>
+              <span style={{ fontWeight: 700, color: C.dark }}>
+                {(() => {
+                  if (exportMode === "bulan") return orders.filter(o => { const d = o.timestamp?.toDate ? o.timestamp.toDate() : new Date(o.tanggal || 0); return d.toISOString().slice(0, 7) === exportBulan; }).length;
+                  const from = exportFrom ? new Date(exportFrom) : null;
+                  const to = exportTo ? new Date(exportTo + "T23:59:59") : null;
+                  return orders.filter(o => { const d = o.timestamp?.toDate ? o.timestamp.toDate() : new Date(o.tanggal || 0); if (from && d < from) return false; if (to && d > to) return false; return true; }).length;
+                })()} transaksi
+              </span>
             </div>
-          </>
-        )}
+            <button className="btn btn-p btn-full" onClick={handleExport} disabled={exportMode === "range" && (!exportFrom || !exportTo)}>
+              <Download size={14} /> Download Excel
+            </button>
+          </div>
+        </div>
+      )}
 
-        <SearchInput value={search} onChange={setSearch} placeholder="Cari nama, HP, atau ID..." />
-        <div className="tab-chips">
-          {metodeOptions.map((m) => (
-            <div key={m} className={`tab-chip ${filterMetode === m ? "active" : ""}`} onClick={() => setFilterMetode(m)}>{m}</div>
+      {/* Stat cards */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, flex: 1 }}>
+          {[
+            { lbl: "Transaksi", val: filtered.length, color: C.dark, isNum: true },
+            { lbl: "Omzet", val: omzetFiltered, color: C.p700 },
+            { lbl: "Piutang", val: piutangFiltered, color: piutangFiltered > 0 ? C.red : C.muted },
+          ].map(s => (
+            <div key={s.lbl} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 9, padding: "9px 10px", textAlign: "center" }}>
+              <div style={{ fontSize: 10, color: C.muted, marginBottom: 2 }}>{s.lbl}</div>
+              <div style={{
+                fontFamily: "'Space Grotesk',sans-serif",
+                fontSize: s.isNum ? 18 : 12,
+                fontWeight: 800,
+                color: s.color,
+                wordBreak: "break-word",
+                lineHeight: 1.2,
+              }}>
+                {s.isNum ? s.val : rp(s.val)}
+              </div>
+            </div>
           ))}
         </div>
-
-        {loadingOrders ? (
-          <div className="loading-screen"><Loader2 size={24} className="spinning" color={C.primary} />Memuat riwayat transaksi...</div>
-        ) : viewMode === "date" ? (
-          <>
-            <div className="section-header">{filteredByDate.length} transaksi · {formatDateLabel(selectedDate)}</div>
-            {filteredByDate.map((order) => <HistoryCard key={order.id} order={order} onViewNota={onViewNota} fmtDate={fmtDate} />)}
-            {filteredByDate.length === 0 && (
-              <div className="empty-state">
-                <div className="empty-icon"><ClipboardList size={40} color={C.border} /></div>
-                <div className="empty-text">Tidak ada transaksi pada {formatDateLabel(selectedDate)}</div>
-              </div>
-            )}
-          </>
-        ) : (
-          <>
-            {grouped.length === 0 ? (
-              <div className="empty-state"><div className="empty-icon"><ClipboardList size={40} color={C.border} /></div><div className="empty-text">Belum ada transaksi</div></div>
-            ) : grouped.map((group) => {
-              const dayRevenue = group.items.filter(o => o.statusBayar === "Lunas").reduce((s, o) => s + o.total, 0);
-              const dayPiutang = group.items.filter(o => o.statusBayar !== "Lunas").reduce((s, o) => s + o.total, 0);
-              return (
-                <div key={group.date.getTime()} style={{ marginBottom: 20 }}>
-                  <div style={{ background: C.dark, borderRadius: 10, padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 800, color: C.primary }}>{formatDateLabel(group.date)}</div>
-                      <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>{formatDateShort(group.date)} · {group.items.length} transaksi</div>
-                    </div>
-                    <div style={{ textAlign: "right" }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: C.white, fontFamily: "'Space Grotesk',sans-serif" }}>{rupiah(dayRevenue + dayPiutang)}</div>
-                      {dayPiutang > 0 && <div style={{ fontSize: 10, color: "#F59E0B", marginTop: 1 }}>piutang {rupiah(dayPiutang)}</div>}
-                    </div>
-                  </div>
-                  {group.items.map((order) => <HistoryCard key={order.id} order={order} onViewNota={onViewNota} fmtDate={fmtDate} />)}
-                </div>
-              );
-            })}
-          </>
+        {isAdmin && (
+          <button className="btn btn-g btn-sm" style={{ flexShrink: 0, padding: "8px 10px", height: "fit-content" }} onClick={() => setShowExport(true)}>
+            <Download size={13} />
+          </button>
         )}
       </div>
+
+      <ChartTransaksi
+        orders={orders}
+        viewMode={viewMode}
+        exportBulan={exportBulan}
+      />
+
+      {/* View mode */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+        {[["minggu", "Mingguan"], ["bulan", "Bulanan"], ["semua", "Semua"]].map(([v, lbl]) => (<div key={v} onClick={() => setViewMode(v)}
+          style={{ flex: 1, padding: "7px", border: `1.5px solid ${viewMode === v ? C.primary : C.border}`, borderRadius: 8, textAlign: "center", cursor: "pointer", fontSize: 12, fontWeight: 700, background: viewMode === v ? C.p100 : C.white, color: viewMode === v ? C.p700 : C.muted }}>
+          {lbl}
+        </div>
+        ))}
+      </div>
+
+      {viewMode === "bulan" && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+          <input type="month" value={exportBulan} onChange={e => setExportBulan(e.target.value)}
+            style={{ flex: 1, padding: "8px 11px", border: `1.5px solid ${C.border}`, borderRadius: 9, fontFamily: "inherit", color: C.dark, outline: "none" }} />
+          <button className="btn btn-g btn-sm" onClick={() => setExportBulan(new Date().toISOString().slice(0, 7))}>Bulan ini</button>
+        </div>
+      )}
+
+      <SearchInput value={search} onChange={setSearch} placeholder="Cari nama, HP, atau nota ID..." />
+
+      {/* Filter status */}
+      <div className="chips">
+        {STATUS_OPTS.map(s => (
+          <div key={s}
+            className={`chip ${s === "Belum Lunas" ? "red" : ""} ${filterStatus === s ? "active" : ""}`}
+            onClick={() => setFilterStatus(s)}>
+            {s}
+          </div>
+        ))}
+      </div>
+
+      {/* Filter layanan */}
+      <div className="chips" style={{ marginTop: -4 }}>
+        {LAYANAN_OPTS.map(s => (
+          <div key={s} className={`chip ${s === "Home Service" ? "amber" : ""} ${filterLayanan === s ? "active" : ""}`}
+            onClick={() => setFilterLayanan(s)}>
+            {s === "Home Service" ? <><Home size={9} /> Home Service</> : s === "Workshop" ? <><Package size={9} /> Workshop</> : s}
+          </div>
+        ))}
+      </div>
+
+      <div className="sec">{filtered.length} transaksi</div>
+
+      {loadingOrders ? (
+        <div className="loading"><Loader2 size={22} className="spin" color={C.primary} /> Memuat riwayat...</div>
+      ) : filtered.length === 0 ? (
+        <div className="empty">
+          <div className="empty-icon"><ClipboardList size={38} color={C.border} /></div>
+          Tidak ada transaksi
+        </div>
+      ) : filtered.map(o => (
+        <HistCard
+          key={o.id} order={o} onViewNota={onViewNota} search={search}
+          onTandaiLunas={(order) => setKonfirmasiLunas(order)}
+          lunasLoading={lunasLoading}
+          onEdit={(ord) => setEditOrder(ord)}
+          onDelete={(ord) => setDeleteConfirm(ord)}
+          isAdmin={isAdmin}
+          onKonfirmasiPembayaran={(order) => setKonfirmasiPembayaran(order)}
+        />
+      ))}
+      {hasMore && (
+        <button
+          className="btn btn-g btn-sm btn-full"
+          style={{ marginTop: 8, marginBottom: 16 }}
+          onClick={onLoadMore}
+        >
+          <Plus size={12} /> Muat 200 transaksi berikutnya
+        </button>
+      )}
     </div>
   );
 }
 
-// ─── HISTORY CARD (extracted) ─────────────────────────────────────────────────
-function HistoryCard({ order, onViewNota, fmtDate }) {
+// ─── NOTA PAGE ────────────────────────────────────────────────────────────────
+function NotaPage({ notaId, onBack }) {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin" || user?.role === "Admin";
+  const [order, setOrder] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let unsub = null;
+    const load = async () => {
+      const { onSnapshot: snap, collection: col, query: q, where: w } = await import("firebase/firestore");
+      const qr = q(col(db, "transactions"), w("notaId", "==", notaId));
+      unsub = snap(qr, s => { setOrder(s.empty ? null : mapOrder(s.docs[0])); setLoading(false); });
+    };
+    load();
+    return () => unsub?.();
+  }, [notaId]);
+
+  if (loading) return <div className="loading" style={{ minHeight: 300 }}><Loader2 size={22} className="spin" color={C.primary} /> Memuat nota...</div>;
+  if (!order) return (
+    <div className="empty" style={{ marginTop: 60 }}>
+      <div className="empty-icon"><AlertCircle size={40} color={C.red} /></div>
+      Nota tidak ditemukan
+      {isAdmin && <button className="btn btn-g btn-sm" style={{ marginTop: 14 }} onClick={onBack}><ArrowLeft size={12} /> Kembali</button>}
+    </div>
+  );
+
+  const isHS = order.layananType === "homeservice";
+  const isLunas = isStatusLunas(order.statusBayar);
+  const subtotal = order.items.reduce((s, it) => s + it.subtotal, 0);
+  const diskonAmt = order.diskon?.amount || 0;
+  const totalTagihan = subtotal - diskonAmt;
+  const depositAmt = order.dp?.nominal || 0;
+  const sisaBayar = totalTagihan - depositAmt;
+  const itemsLabeled = addItemLabels(order.items);
+
   return (
-    <div className="history-card" onClick={() => onViewNota(order.notaId || order.id)}>
-      <div className="history-top">
-        <div>
-          <div className="history-cust">{order.customerNama}</div>
-          <div className="history-date">{order.id} · {fmtDate(order.tanggal || order.timestamp)}</div>
+    <div className="ani pad">
+      <div style={{ background: C.dark, borderRadius: 12, padding: "16px", textAlign: "center", marginBottom: 14 }}>
+        <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 18, fontWeight: 700, color: C.primary, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+          <Layers size={16} /> Carpetology
         </div>
-        <div className={`badge ${order.statusBayar === "Lunas" ? "badge-success" : "badge-warning"}`} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          {order.statusBayar === "Lunas" ? <><CheckCircle size={10} /> Lunas</> : <><Clock size={10} /> Belum</>}
+        <div style={{ fontSize: 10, color: C.muted, marginTop: 3 }}>{order.notaId}</div>
+      </div>
+
+      <div style={{
+        background: isLunas ? C.okBg : order.statusBayar === "Menunggu Konfirmasi" ? C.blueBg : C.warnBg,
+        border: `1px solid ${isLunas ? C.ok : order.statusBayar === "Menunggu Konfirmasi" ? C.blue : C.warn}`,
+        borderRadius: 9, padding: "9px 13px", display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12
+      }}>
+        <span style={{ fontSize: 12, fontWeight: 700, color: isLunas ? C.okTx : order.statusBayar === "Menunggu Konfirmasi" ? C.blueTx : C.warnTx, display: "flex", alignItems: "center", gap: 4 }}>
+          {statusIcon(order.statusBayar)} {order.statusBayar}
+        </span>
+        <span style={{ fontSize: 11, color: C.muted }}>{fmtDate(order.tanggal || order.timestamp)}</span>
+      </div>
+
+      <div style={{ background: C.surface, borderRadius: 10, padding: "11px 13px", border: `1px solid ${C.border}`, marginBottom: 12 }}>
+        <div style={{ fontSize: 16, fontWeight: 800, color: C.dark }}>{order.customerNama}</div>
+        <div style={{ fontSize: 11, color: C.muted, marginTop: 2, display: "flex", alignItems: "center", gap: 4 }}>
+          <Phone size={11} /> {order.customerHp}
         </div>
       </div>
-      <div className="history-items">
-        {(order.items || []).map((i, idx) => (
-          <span key={idx}>{idx > 0 && ", "}{i.qty}× {i.nama}</span>
+
+      <div style={{ border: `1px solid ${C.border}`, borderRadius: 10, overflow: "hidden", marginBottom: 14 }}>
+        <div style={{ background: C.primary, padding: "7px 13px" }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: "white", textTransform: "uppercase", letterSpacing: ".5px" }}>Detail Item</span>
+        </div>
+
+        {itemsLabeled.map((it, i) => (
+          <div key={it.cartKey || i} style={{ padding: "9px 13px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between" }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>{it.displayName}</div>
+              <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>
+                {it.satuan === "meter" ? `${(it.luas || 0).toFixed(2)} m² × ${rp(it.harga)}/m²` : `${it.qty} pcs × ${rp(it.harga)}`}
+              </div>
+            </div>
+            <span style={{ fontSize: 13, fontWeight: 700 }}>{rp(it.subtotal)}</span>
+          </div>
         ))}
-        {order.catatan && (
-          <div style={{ fontSize: 11, color: "#D97706", marginTop: 4, fontStyle: "italic", display: "flex", alignItems: "center", gap: 4 }}>
-            <FileText size={11} /> {order.catatan}
+
+        {diskonAmt > 0 && (
+          <div style={{ padding: "7px 13px", display: "flex", justifyContent: "space-between", fontSize: 12, color: C.okTx, borderBottom: `.5px solid ${C.border}`, background: C.surface }}>
+            <span style={{ display: "flex", alignItems: "center", gap: 3 }}><Tag size={11} /> Diskon</span>
+            <span style={{ fontWeight: 700 }}>−{rp(diskonAmt)}</span>
+          </div>
+        )}
+
+        <div style={{ padding: "11px 13px", background: C.p100, display: "flex", justifyContent: "space-between" }}>
+          <span style={{ fontSize: 13, fontWeight: 800, color: C.p700 }}>Total Tagihan</span>
+          <span style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 17, fontWeight: 800, color: C.p700 }}>{rp(totalTagihan)}</span>
+        </div>
+
+        {isHS && depositAmt > 0 && (
+          <div style={{ padding: "8px 13px", background: C.amberBg, borderTop: `.5px solid ${C.amberBd}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: 12, color: C.amberTx, fontWeight: 600, display: "flex", alignItems: "center", gap: 3 }}>
+              <Banknote size={11} /> Deposit dibayar ({order.metode})
+            </span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: C.amberTx }}>{rp(depositAmt)}</span>
+          </div>
+        )}
+
+        {isHS && depositAmt > 0 && !isLunas && (
+          <div style={{ padding: "8px 13px", background: C.warnBg, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: 12, color: C.warnTx, fontWeight: 600, display: "flex", alignItems: "center", gap: 3 }}>
+              <Clock size={11} /> Sisa dibayar saat selesai
+            </span>
+            <span style={{ fontSize: 13, fontWeight: 800, color: C.warnTx }}>{rp(sisaBayar)}</span>
           </div>
         )}
       </div>
-      <div className="history-bottom">
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          <span className="badge badge-gray" style={{ fontSize: 10 }}>{order.metode}</span>
-          {order.diskon?.amount > 0 && (
-            <span className="badge badge-warning" style={{ fontSize: 10 }}>-{rupiah(order.diskon.amount)}</span>
-          )}
+
+      <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
+        <span className={`badge ${statusBadgeClass(order.statusBayar)}`} style={{ padding: "4px 9px" }}>{order.statusBayar}</span>
+        <span className="badge bg-gray" style={{ padding: "4px 9px" }}>{order.metode}</span>
+        {isHS && <span className="badge bg-amber" style={{ padding: "4px 9px" }}><Home size={9} /> Home Service</span>}
+      </div>
+
+      <div style={{ display: "flex", gap: 8 }} className="no-print">
+        {isAdmin && onBack && <button className="btn btn-s" style={{ flex: 1 }} onClick={onBack}><ArrowLeft size={13} /> Kembali</button>}
+        <button className="btn btn-p" style={{ flex: 1 }} onClick={() => window.print()}><Printer size={14} /> Cetak</button>
+      </div>
+
+      <div style={{ textAlign: "center", marginTop: 20, paddingTop: 14, borderTop: `1px dashed ${C.border}` }}>
+        <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 12, fontWeight: 700, color: C.primary, display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
+          <Layers size={12} /> Carpetology
         </div>
-        <div className="history-total">{rupiah(order.total)}</div>
+        <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>Terima kasih atas kepercayaan Anda</div>
       </div>
     </div>
   );
@@ -2436,16 +2159,27 @@ function HistoryCard({ order, onViewNota, fmtDate }) {
 
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 export default function App() {
-  const [tab, setTab] = useState("kasir");
-  const [kasirStep, setKasirStep] = useState(0);
-  const [cart, setCart] = useState([]);
-  const [customer, setCustomer] = useState(null);
-  const [payMethod, setPayMethod] = useState("");
-  const [catatan, setCatatan] = useState("");
-  const [currentOrder, setCurrentOrder] = useState(null);
-  const [savingOrder, setSavingOrder] = useState(false);
-  const [notaView, setNotaView] = useState(null);
   const { user } = useAuth();
+  const isAdmin = user?.role === "admin" || user?.role === "Admin";
+
+
+  // [FIX 🟢] Load session dari sessionStorage saat mount
+  const savedSession = loadSession();
+
+  const [tab, setTab] = useState("kasir");
+  const [step, setStep] = useState(savedSession?.step ?? 0);
+  const [cart, setCart] = useState(savedSession?.cart ?? []);
+  const [customer, setCustomer] = useState(savedSession?.customer ?? null);
+  const [svcType, setSvcType] = useState(savedSession?.svcType ?? "workshop");
+  const [currentOrder, setCurrentOrder] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [notaView, setNotaView] = useState(null);
+  const [lastCustomer, setLastCustomer] = useState(null);
+  const [orderLimit, setOrderLimit] = useState(200);
+  const [hasMore, setHasMore] = useState(false);
+
+  // Banner: tampilkan notifikasi kalau ada session yang dipulihkan
+  const [sessionRestored] = useState(() => !!(savedSession?.cart?.length));
 
   const [products, setProducts] = useState([]);
   const [customers, setCustomers] = useState([]);
@@ -2454,170 +2188,273 @@ export default function App() {
   const [loadingCustomers, setLoadingCustomers] = useState(true);
   const [loadingOrders, setLoadingOrders] = useState(true);
 
+  // [FIX 🟢] Simpan ke sessionStorage setiap kali cart/customer/svcType/step berubah
+  useEffect(() => {
+    // Jangan simpan kalau sudah di step sukses (step 2)
+    if (step < 2) {
+      saveSession({ cart, customer, svcType, step });
+    }
+  }, [cart, customer, svcType, step]);
+
   useEffect(() => {
     const el = document.createElement("style");
-    el.textContent = globalCss;
+    el.textContent = CSS;
     document.head.appendChild(el);
     return () => document.head.removeChild(el);
   }, []);
 
   useEffect(() => {
-    const fetchProducts = async () => {
-      try {
-        const snap = await getDocs(collection(db, "products"));
-        const data = snap.docs.map(mapProduct);
-        data.sort((a, b) => a.nama.localeCompare(b.nama, 'id'));
-        setProducts(data);
-      } catch (e) { console.error("Gagal load products:", e); }
-      finally { setLoadingProducts(false); }
+    const unsub = onSnapshot(
+      query(collection(db, "products"), orderBy("nama_produk")),
+      snap => {
+        setProducts(snap.docs.map(mapProduct));
+        setLoadingProducts(false);
+      },
+      e => { console.error(e); setLoadingProducts(false); }
+    );
+    return unsub;
+  }, []);
+
+  useEffect(() => {
+    const unsub = onSnapshot(
+      query(collection(db, "customers"), orderBy("nama")),
+      snap => { setCustomers(snap.docs.map(mapCustomer)); setLoadingCustomers(false); },
+      e => { console.error(e); setLoadingCustomers(false); }
+    );
+    return unsub;
+  }, []);
+
+  useEffect(() => {
+    const handleBeforeUnload = (e) => {
+      if (cart.length > 0 && step < 2) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
     };
-    fetchProducts();
-  }, []);
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [cart, step]);
 
   useEffect(() => {
-    const unsub = onSnapshot(query(collection(db, "customers"), orderBy("nama")), (snap) => {
-      setCustomers(snap.docs.map(mapCustomer)); setLoadingCustomers(false);
-    }, (e) => { console.error("Gagal load customers:", e); setLoadingCustomers(false); });
-    return unsub;
-  }, []);
+    if (cart.length > 0 && step === 1) {
+      window.history.pushState({ kasir: true }, "");
+      const handlePopState = () => {
+        setStep(0);
+      };
+      window.addEventListener("popstate", handlePopState);
+      return () => window.removeEventListener("popstate", handlePopState);
+    }
+  }, [cart.length, step]);
+
+  // [FIX 🔴] Gunakan useRef untuk lastCustomer agar tidak jadi dependency
+  const lastCustomerSet = useRef(false);
 
   useEffect(() => {
-    const unsub = onSnapshot(query(collection(db, "transactions"), orderBy("created_at", "desc")), (snap) => {
-      setOrders(snap.docs.map(doc => {
-        const d = doc.data();
-        return {
-          id: doc.id, ...d,
-          customerNama: d.nama, customerHp: d.hp,
-          metode: d.metode_pembayaran, total: d.total_harga,
-          tanggal: d.tanggal, statusBayar: d.statusBayar,
-          items: d.items, notaId: d.notaId, catatan: d.catatan || "",
-          diskon: d.diskon || null, subtotal: d.subtotal_harga || d.total_harga,
-        };
-      }));
-      setLoadingOrders(false);
-    }, (e) => { console.error("Gagal load transactions:", e); setLoadingOrders(false); });
+    const unsub = onSnapshot(
+      query(collection(db, "transactions"), orderBy("created_at", "desc"), limit(orderLimit)),
+      snap => {
+        const mapped = snap.docs.map(mapOrder);
+        setOrders(mapped);
+        setHasMore(snap.size === orderLimit);
+        if (mapped.length > 0 && !lastCustomerSet.current) {
+          const last = mapped[0];
+          setLastCustomer({ id: last.customerId || "", nama: last.customerNama, hp: last.customerHp });
+          lastCustomerSet.current = true;
+        }
+        setLoadingOrders(false);
+      },
+      e => { console.error(e); setLoadingOrders(false); }
+    );
     return unsub;
-  }, []);
+  }, [orderLimit]);
 
   const handleAddCustomer = async ({ nama, hp }) => {
-    const docRef = await addDoc(collection(db, "customers"), { nama, no_hp: hp, created_at: serverTimestamp() });
-    return { id: docRef.id, nama, hp };
+    const ref = await addDoc(collection(db, "customers"), { nama, no_hp: hp, created_at: serverTimestamp() });
+    return { id: ref.id, nama, hp };
   };
 
-  const handleSimpan = async ({ diskonType, diskonVal, diskonAmount, isHomeVisit }) => {
-    setSavingOrder(true);
+  const handleSave = async ({ payMethod, diskonAmt, catatan, dpAmount }) => {
+    setSaving(true);
     try {
-      const subtotal = cart.reduce((s, c) => s + c.subtotal, 0);
-      const total = subtotal - diskonAmount;
-      const notaId = "NOTA-" + genId();
-      const metodeLabel = PAY_METHODS.find((m) => m.id === payMethod)?.label || payMethod;
-      const statusBayar = payMethod === "belum" ? "Belum Lunas" : "Lunas";
+      const subtotalVal = cart.reduce((s, c) => s + c.subtotal, 0);
+      const totalHarga = subtotalVal - diskonAmt;
+      const notaId = genId();
+      const isHS = svcType === "homeservice";
 
-      // ── Home Visit → langsung Selesai & Lunas ──────────────────────────────
-      const statusOrder = isHomeVisit ? "Selesai" : "Waiting List";
-      const layananType = isHomeVisit ? "home_visit" : "laundry";
-      // Jika home visit paksa statusBayar = Lunas karena langsung selesai di tempat
-      const finalStatusBayar = isHomeVisit ? "Lunas" : statusBayar;
+      // [FIX 🟡] Status pakai helper baru — QRIS/Transfer → Menunggu Konfirmasi
+      const statusBayar = resolveStatusBayar(isHS, dpAmount, payMethod);
+      const tanggal = fmtIndo();
 
-      const BULAN = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Ags", "Sep", "Okt", "Nov", "Des"];
-      const now = new Date();
-      const tanggalIndo = `${String(now.getDate()).padStart(2, "0")} ${BULAN[now.getMonth()]} ${now.getFullYear()}`;
-
-      const itemsPayload = cart.map((c) => ({
-        produkId: c.produkId, nama: c.nama, satuan: c.satuan, qty: c.qty,
-        panjang: null, lebar: null,
+      const itemsPayload = cart.map(c => ({
+        cartKey: c.cartKey,
+        produkId: c.produkId,
+        nama: c.nama,
+        satuan: c.satuan,
+        qty: c.qty,
+        harga: c.harga,
         luas: c.satuan === "meter" ? (parseFloat(c.luas) || 0) : null,
-        harga: c.harga, subtotal: c.subtotal,
+        panjang: null,
+        lebar: null,
+        subtotal: c.subtotal,
       }));
 
-      const txRef = await addDoc(collection(db, "transactions"), {
-        customer_id: doc(db, "customers", customer.id),
+      const dpPayload = isHS && dpAmount > 0
+        ? { nominal: dpAmount, sisa: totalHarga - dpAmount }
+        : null;
+
+      const ref = await addDoc(collection(db, "transactions"), {
+        customer_id: customer.id,
         nama: customer.nama,
         hp: customer.hp,
         items: itemsPayload,
-        subtotal_harga: subtotal,
-        diskon: { type: diskonType, nilai: diskonVal, amount: diskonAmount },
-        metode_pembayaran: metodeLabel,
-        status_order: statusOrder,       // ← "Selesai" jika home_visit
-        statusBayar: finalStatusBayar,  // ← "Lunas" jika home_visit
-        layanan_type: layananType,       // ← FIELD BARU
-        total_harga: total,
+        subtotal_harga: subtotalVal,
+        diskon: { type: "nominal", nilai: diskonAmt, amount: diskonAmt },
+        metode_pembayaran: payMethod,
+        status_order: isHS ? "Home Service" : "Waiting List",
+        statusBayar,
+        layanan_type: svcType,
+        dp: dpPayload,
+        total_harga: totalHarga,
         created_at: serverTimestamp(),
-        tanggal: tanggalIndo,
+        tanggal,
         catatan: catatan || "",
         notaId,
       });
 
       setCurrentOrder({
-        id: txRef.id, customerId: customer.id,
-        customerNama: customer.nama, customerHp: customer.hp,
-        items: itemsPayload, subtotal,
-        diskon: { type: diskonType, nilai: diskonVal, amount: diskonAmount },
-        total, metode: metodeLabel,
-        statusBayar: finalStatusBayar,
-        status: statusOrder,
-        layananType,                           // ← kirim ke StepSukses
-        tanggal: tanggalIndo, catatan, notaId,
-        timestamp: new Date(),
+        id: ref.id,
+        customerNama: customer.nama,
+        customerHp: customer.hp,
+        items: itemsPayload,
+        diskon: { type: "nominal", nilai: diskonAmt, amount: diskonAmt },
+        total: totalHarga,
+        subtotal: subtotalVal,
+        metode: payMethod,
+        statusBayar,
+        layananType: svcType,
+        dp: dpPayload,
+        dpAmount,
+        tanggal,
+        notaId,
       });
-      setKasirStep(3);
+
+      setLastCustomer({ id: customer.id, nama: customer.nama, hp: customer.hp });
+      // [FIX 🟢] Hapus session saat transaksi berhasil
+      clearSession();
+      setStep(2);
     } catch (e) {
-      console.error("Gagal simpan transaksi:", e);
-      alert("Gagal menyimpan transaksi. Coba lagi.");
+      console.error(e);
+      alert("Gagal simpan: " + e.message);
     } finally {
-      setSavingOrder(false);
+      setSaving(false);
     }
   };
 
   const handleReset = () => {
-    setKasirStep(0); setCart([]); setCustomer(null); setPayMethod(""); setCatatan(""); setCurrentOrder(null); setNotaView(null); setTab("kasir");
+    clearSession(); // [FIX 🟢] Bersihkan session
+    setStep(0); setCart([]); setCustomer(null); setSvcType("workshop");
+    setCurrentOrder(null); setNotaView(null); setTab("kasir");
   };
 
   return (
-    <div className="kasir-root">
+    <div className="kr">
       <div className="topbar">
-        <div className="topbar-icon"><Layers size={20} strokeWidth={2} color={C.dark} /></div>
+        <div className="tb-icon"><Layers size={17} strokeWidth={2} /></div>
         <div style={{ flex: 1 }}>
-          <div className="topbar-brand">Carpetology</div>
-          <div className="topbar-sub">Sistem Kasir Laundry</div>
+          <div className="tb-brand">Carpetology</div>
+          <div className="tb-sub">Sistem Kasir</div>
         </div>
-        <div style={{ textAlign: "right" }}>
-          <div style={{ fontSize: 11, color: C.primary, fontWeight: 600 }}>{todayLabel()}</div>
-          {cart.length > 0 && tab === "kasir" && kasirStep === 0 && !notaView && (
-            <div className="badge badge-primary" style={{ marginTop: 4, display: "inline-flex" }}>{cart.length} item</div>
-          )}
-        </div>
+        <div style={{ textAlign: "right", fontSize: 11, color: C.primary, fontWeight: 600 }}>{todayLabel()}</div>
       </div>
 
+      {/* [FIX 🟢] Banner kalau cart dipulihkan dari session */}
+      {sessionRestored && step > 0 && step < 2 && (
+        <div className="session-banner">
+          <AlertCircle size={13} />
+          Transaksi sebelumnya dipulihkan · {cart.length} item
+          <button
+            onClick={handleReset}
+            style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: C.amberTx, fontWeight: 700, fontSize: 11, padding: "2px 6px" }}
+          >
+            Mulai baru
+          </button>
+        </div>
+      )}
+
       {notaView ? (
-        <NotaPage notaId={notaView} orders={orders} onBack={() => setNotaView(null)} />
+        <NotaPage notaId={notaView} onBack={() => setNotaView(null)} />
       ) : (
         <>
-          <div className="nav-tabs">
-            <div className={`nav-tab ${tab === "kasir" ? "active" : ""}`} onClick={() => setTab("kasir")}>
-              <ShoppingCart size={14} /> Kasir
+          <div className="nav">
+            <div className={`ntab ${tab === "kasir" ? "active" : ""}`} onClick={() => setTab("kasir")}>
+              <ShoppingCart size={12} /> Kasir
             </div>
-            <div className={`nav-tab ${tab === "riwayat" ? "active" : ""}`} onClick={() => setTab("riwayat")}>
-              <ClipboardList size={14} /> Riwayat
+            <div className={`ntab ${tab === "riwayat" ? "active" : ""}`} onClick={() => setTab("riwayat")}>
+              <ClipboardList size={12} /> Riwayat
             </div>
           </div>
 
           {tab === "kasir" && (
             <>
-              {kasirStep < 3 && <StepBar current={kasirStep} />}
-              {kasirStep === 0 && <StepProduk products={products} loadingProducts={loadingProducts} cart={cart} onCartChange={setCart} onNext={() => setKasirStep(1)} />}
-              {kasirStep === 1 && <StepCustomer customers={customers} loadingCustomers={loadingCustomers} onAddCustomer={handleAddCustomer} selectedCust={customer} onSelect={setCustomer} cart={cart} onCartChange={setCart} onNext={() => setKasirStep(2)} onBack={() => setKasirStep(0)} />}
-              {kasirStep === 2 && <StepPembayaran cart={cart} customer={customer} payMethod={payMethod} setPayMethod={setPayMethod} catatan={catatan} setCatatan={setCatatan} onNext={handleSimpan} onBack={() => setKasirStep(1)} saving={savingOrder} />}
-              {kasirStep === 3 && currentOrder && <StepSukses order={currentOrder} onReset={handleReset} onViewNota={setNotaView} />}
+              {step < 2 && (
+                <div className="steps">
+                  <div style={{ display: "flex", alignItems: "center", flex: 1 }}>
+                    <div className="swrap">
+                      <div className={`sdot ${step > 0 ? "done" : "active"}`}>
+                        {step > 0 ? <CheckCircle size={12} /> : "1"}
+                      </div>
+                      <div className="slbl">Produk & Customer</div>
+                    </div>
+                    <div className={`sline ${step > 0 ? "done" : ""}`} style={{ flex: 1, margin: "0 6px" }} />
+                  </div>
+                  <div className="swrap">
+                    <div className={`sdot ${step === 1 ? "active" : "pend"}`}>2</div>
+                    <div className="slbl">Bayar</div>
+                  </div>
+                </div>
+              )}
+
+              {step === 0 && (
+                <Step1
+                  products={products} loadingProducts={loadingProducts}
+                  customers={customers} loadingCustomers={loadingCustomers}
+                  cart={cart} setCart={setCart}
+                  customer={customer} setCustomer={setCustomer}
+                  svcType={svcType} setSvcType={setSvcType}
+                  onAddCustomer={handleAddCustomer}
+                  lastCustomer={lastCustomer}
+                  onNext={() => setStep(1)}
+                />
+              )}
+
+              {step === 1 && (
+                <Step2
+                  cart={cart} customer={customer} svcType={svcType}
+                  onBack={() => setStep(0)} onSave={handleSave} saving={saving}
+                />
+              )}
+
+              {step === 2 && currentOrder && (
+                <StepSukses order={currentOrder} onReset={handleReset} onViewNota={setNotaView} />
+              )}
             </>
           )}
 
-          {tab === "riwayat" && <RiwayatPage orders={orders} loadingOrders={loadingOrders} onViewNota={setNotaView} />}
+          {tab === "riwayat" && (
+            <RiwayatPage
+              orders={orders}
+              loadingOrders={loadingOrders}
+              onViewNota={setNotaView}
+              isAdmin={isAdmin}
+              hasMore={hasMore}
+              onLoadMore={() => setOrderLimit(prev => prev + 200)}
+            />
+          )}
         </>
       )}
 
-      {(user?.role === 'admin' || user?.role === 'Admin') && (
-        <div style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 480, borderTop: '1px solid #e2e8f0', backgroundColor: '#fff', zIndex: 100 }}>
+      {isAdmin && (
+        <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 480, borderTop: `1px solid ${C.border}`, backgroundColor: C.white, zIndex: 100 }}>
           <Navbar />
         </div>
       )}

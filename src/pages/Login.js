@@ -10,12 +10,12 @@ import {
 const loginAttempts = { count: 0, lockedUntil: 0 };
 
 export default function Login() {
-    const [email, setEmail]               = useState('');
-    const [password, setPassword]         = useState('');
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
-    const [loading, setLoading]           = useState(false);
-    const [error, setError]               = useState('');
-    const [lockSeconds, setLockSeconds]   = useState(0);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState('');
+    const [lockSeconds, setLockSeconds] = useState(0);
     const navigate = useNavigate();
 
     const getErrorMessage = (code) => {
@@ -50,12 +50,16 @@ export default function Login() {
         }
 
         if (!email.trim()) { setError('Masukkan email Anda.'); return; }
-        if (!password)     { setError('Masukkan password Anda.'); return; }
+        if (!password) { setError('Masukkan password Anda.'); return; }
 
         setLoading(true);
         try {
             await signInWithEmailAndPassword(auth, email.trim(), password);
             loginAttempts.count = 0;
+
+            // ✅ Tandai gesture sudah ada dari halaman ini
+            sessionStorage.setItem('audioUnlocked', 'true');
+
             navigate('/admin');
         } catch (err) {
             loginAttempts.count += 1;

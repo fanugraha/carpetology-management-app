@@ -4,27 +4,29 @@ import { db } from "../firebase";
 import { collection, query, where, onSnapshot } from "firebase/firestore";
 import { useAuth } from "../context/AuthContext";
 import {
-    Layers, CheckCircle, Clock, Scissors, Ruler,
+    Layers, CheckCircle, Clock, Scissors,
     Package, CreditCard, ClipboardList, ArrowLeft,
-    Printer, AlertTriangle, XCircle, Phone, Hash,
+    Printer, AlertTriangle, XCircle, Phone,
+    Banknote, Home, Ruler, Tag,
 } from "lucide-react";
 
-// ─── COLORS ──────────────────────────────────────────────────────────────────
 const C = {
-    primary: "#04CDCD", primary600: "#03A8A8", primary700: "#028585",
-    primary100: "#E0FAFA", primary200: "#B3F0F0", primary50: "#F0FEFE",
-    dark: "#1A2E35", muted: "#6B8894", border: "#D4ECEC",
-    surface: "#F4FEFE", white: "#FFFFFF",
-    success: "#22C55E", successBg: "#DCFCE7",
-    warning: "#F59E0B", warningBg: "#FEF3C7",
-    danger: "#EF4444", dangerBg: "#FEE2E2",
+    primary: "#04CDCD", p600: "#03A8A8", p700: "#028585",
+    p100: "#E0FAFA", p200: "#B3F0F0", p50: "#F0FEFE",
+    amber: "#D97706", amberBg: "#FEF3C7", amberBd: "#FCD34D", amberTx: "#92400E",
+    dark: "#1A2E35", dark2: "#2C4A54", muted: "#6B8894",
+    border: "#D4ECEC", surface: "#F4FEFE", white: "#FFFFFF",
+    ok: "#22C55E", okBg: "#DCFCE7", okTx: "#15803D",
+    warn: "#F59E0B", warnBg: "#FEF3C7", warnTx: "#92400E",
+    red: "#EF4444", redBg: "#FEE2E2",
 };
 
 const rupiah = (n) => "Rp " + (n || 0).toLocaleString("id-ID");
+
 const fmtDate = (d) => {
     if (!d) return "-";
     const dt = d?.toDate ? d.toDate() : new Date(d);
-    return dt.toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" });
+    return dt.toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
 };
 
 const globalCss = `
@@ -32,23 +34,23 @@ const globalCss = `
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: 'Plus Jakarta Sans', sans-serif; background: ${C.surface}; color: ${C.dark}; }
   .nota-root { max-width: 480px; margin: 0 auto; background: ${C.white}; min-height: 100vh; box-shadow: 0 0 40px rgba(4,205,205,0.08); }
-  .badge { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; }
-  .badge-success { background: ${C.successBg}; color: #15803D; }
-  .badge-warning { background: ${C.warningBg}; color: #D97706; }
-  .badge-gray { background: #F1F5F9; color: #64748B; }
-  .badge-primary { background: ${C.primary100}; color: ${C.primary700}; }
-  .btn { padding: 13px 20px; border-radius: 12px; font-size: 14px; font-weight: 700; border: none; cursor: pointer; font-family: inherit; display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; }
-  .btn-primary { background: ${C.primary}; color: white; }
-  .btn-ghost { background: none; color: ${C.primary}; border: 1.5px solid ${C.primary}; }
-  .spinner { display: inline-block; width: 24px; height: 24px; border: 3px solid ${C.primary200}; border-top-color: ${C.primary}; border-radius: 50%; animation: spin .7s linear infinite; }
+  .badge { display: inline-flex; align-items: center; gap: 3px; padding: 2px 7px; border-radius: 5px; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; }
+  .bg-ok { background: ${C.okBg}; color: ${C.okTx}; }
+  .bg-warn { background: ${C.warnBg}; color: ${C.warnTx}; }
+  .bg-gray { background: #F1F5F9; color: #475569; }
+  .bg-amber { background: ${C.amberBg}; color: ${C.amberTx}; }
+  .bg-teal { background: ${C.p100}; color: ${C.p700}; }
+  .spinner { display: inline-block; width: 22px; height: 22px; border: 3px solid ${C.p200}; border-top-color: ${C.primary}; border-radius: 50%; animation: spin .7s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes slideUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+  .ani { animation: slideUp .22s ease-out; }
   @media print { .no-print { display: none !important; } }
 `;
 
 export default function NotaPublicPage() {
     const { notaId } = useParams();
     const { user } = useAuth();
-    const isAdmin = user?.role === 'admin' || user?.role === 'Admin';
+    const isAdmin = user?.role === "admin" || user?.role === "Admin";
 
     const [order, setOrder] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -62,18 +64,12 @@ export default function NotaPublicPage() {
 
     useEffect(() => {
         if (!notaId) return;
-
-        const q = query(
-            collection(db, "transactions"),
-            where("notaId", "==", notaId)
-        );
-
+        const q = query(collection(db, "transactions"), where("notaId", "==", notaId));
         const unsub = onSnapshot(q, (snap) => {
             if (!snap.empty) {
-                const docSnap = snap.docs[0];
-                const d = docSnap.data();
+                const d = snap.docs[0].data();
                 setOrder({
-                    id: docSnap.id,
+                    id: snap.docs[0].id,
                     customerNama: d.nama || "",
                     customerHp: d.hp || "-",
                     items: (d.items || []).map(it => ({
@@ -83,16 +79,17 @@ export default function NotaPublicPage() {
                         luas: it.luas != null ? Number(it.luas) : null,
                         subtotal: Number(it.subtotal || 0),
                     })),
-                    subtotal: Number(d.subtotal_harga || d.total_harga || 0),
                     diskon: d.diskon || null,
+                    dp: d.dp || null,
+                    layananType: d.layanan_type || null,
                     total: Number(d.total_harga || 0),
+                    subtotal: Number(d.subtotal_harga || d.total_harga || 0),
                     metode: d.metode_pembayaran || "",
                     statusBayar: d.statusBayar || "Belum Lunas",
-                    status: d.status_order || "Waiting List",
                     tanggal: d.tanggal || "",
                     timestamp: d.created_at || null,
                     catatan: d.catatan || "",
-                    notaId: d.notaId || docSnap.id,
+                    notaId: d.notaId || snap.docs[0].id,
                 });
             } else {
                 setOrder(null);
@@ -102,17 +99,17 @@ export default function NotaPublicPage() {
             console.error("Gagal fetch nota:", err);
             setLoading(false);
         });
-
         return () => unsub();
     }, [notaId]);
 
-    // ── Loading ──
+    // ── LOADING ──────────────────────────────────────────────────────────────
     if (loading) return (
         <div className="nota-root">
-            <div style={{ background: C.dark, padding: "20px", textAlign: "center" }}>
-                <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 24, fontWeight: 800, color: C.primary, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-                    <Layers size={22} color={C.primary} /> Carpetology
+            <div style={{ background: C.dark, padding: "16px", textAlign: "center" }}>
+                <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 18, fontWeight: 700, color: C.primary, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                    <Layers size={16} /> Carpetology
                 </div>
+                <div style={{ fontSize: 10, color: C.muted, marginTop: 3 }}>Memuat nota...</div>
             </div>
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: 300, gap: 12, color: C.muted, fontSize: 13 }}>
                 <div className="spinner" />
@@ -121,179 +118,195 @@ export default function NotaPublicPage() {
         </div>
     );
 
-    // ── Not found ──
+    // ── NOT FOUND ─────────────────────────────────────────────────────────────
     if (!order) return (
         <div className="nota-root">
-            <div style={{ background: C.dark, padding: "20px", textAlign: "center" }}>
-                <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 24, fontWeight: 800, color: C.primary, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-                    <Layers size={22} color={C.primary} /> Carpetology
+            <div style={{ background: C.dark, padding: "16px", textAlign: "center" }}>
+                <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 18, fontWeight: 700, color: C.primary, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                    <Layers size={16} /> Carpetology
                 </div>
             </div>
             <div style={{ textAlign: "center", padding: "60px 20px", color: C.muted }}>
                 <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}>
-                    <XCircle size={40} color={C.danger} />
+                    <XCircle size={40} color={C.red} />
                 </div>
                 <div style={{ fontSize: 14 }}>Nota <strong>{notaId}</strong> tidak ditemukan</div>
             </div>
         </div>
     );
 
+    // ── KALKULASI ─────────────────────────────────────────────────────────────
+    const isHS = order.layananType === "homeservice";
     const isLunas = order.statusBayar === "Lunas";
+    const subtotal = order.items.reduce((s, it) => s + it.subtotal, 0);
+    const diskonAmt = order.diskon?.amount || 0;
+    const dpAmt = order.dp?.nominal || 0;
+    const totalAkhir = subtotal - diskonAmt - dpAmt;
 
-    // ── Render ──
+    // ── RENDER ────────────────────────────────────────────────────────────────
     return (
-        <div className="nota-root">
-            {/* Header */}
-            <div style={{ background: C.dark, padding: "20px", textAlign: "center" }}>
-                <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 24, fontWeight: 800, color: C.primary, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-                    <Layers size={22} color={C.primary} /> Carpetology
+        <div className="nota-root ani">
+
+            {/* ── HEADER ── */}
+            <div style={{ background: C.dark, padding: "16px", textAlign: "center" }}>
+                <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 18, fontWeight: 700, color: C.primary, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                    <Layers size={16} /> Carpetology
                 </div>
-                <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>
-                    Jasa Cuci Karpet &amp; Laundry Professional
-                </div>
+                <div style={{ fontSize: 10, color: C.muted, marginTop: 3 }}>{order.notaId}</div>
             </div>
 
-            <div style={{ padding: 20 }}>
-                {/* Status bar */}
+            <div style={{ padding: "14px 16px 32px" }}>
+
+                {/* ── STATUS PAYMENT ── */}
                 <div style={{
-                    background: isLunas ? C.successBg : C.warningBg,
-                    border: `1px solid ${isLunas ? C.success : C.warning}`,
-                    borderRadius: 12, padding: "10px 16px",
-                    display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20,
+                    background: isLunas ? C.okBg : C.warnBg,
+                    border: `1px solid ${isLunas ? C.ok : C.warn}`,
+                    borderRadius: 9, padding: "9px 13px",
+                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                    marginBottom: 12,
                 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: isLunas ? "#15803D" : "#D97706", display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: isLunas ? C.okTx : C.warnTx, display: "flex", alignItems: "center", gap: 4 }}>
                         {isLunas
-                            ? <CheckCircle size={15} color="#15803D" />
-                            : <Clock size={15} color="#D97706" />}
-                        {isLunas ? "Lunas" : "Belum Lunas"}
-                    </div>
-                    <div style={{ fontSize: 11, color: C.muted }}>{fmtDate(order.tanggal || order.timestamp)}</div>
+                            ? <><CheckCircle size={12} /> Sudah Lunas</>
+                            : <><Clock size={12} /> Belum Lunas</>
+                        }
+                    </span>
+                    <span style={{ fontSize: 11, color: C.muted }}>{fmtDate(order.tanggal || order.timestamp)}</span>
                 </div>
 
-                {/* Customer info */}
-                <div style={{ background: C.surface, borderRadius: 12, padding: "14px 16px", marginBottom: 16, border: `1px solid ${C.border}` }}>
-                    <div style={{ fontSize: 11, color: C.muted, marginBottom: 8, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px" }}>Info Customer</div>
-                    <div style={{ fontSize: 18, fontWeight: 800, color: C.dark }}>{order.customerNama}</div>
-                    <div style={{ fontSize: 13, color: C.muted, marginTop: 2, display: "flex", alignItems: "center", gap: 5 }}>
-                        <Phone size={12} color={C.muted} /> {order.customerHp}
-                    </div>
-                    <div style={{ fontSize: 11, color: C.muted, marginTop: 4, display: "flex", alignItems: "center", gap: 4 }}>
-                        <Hash size={11} color={C.muted} />{order.notaId}
+                {/* ── CUSTOMER ── */}
+                <div style={{ background: C.surface, borderRadius: 10, padding: "11px 13px", border: `1px solid ${C.border}`, marginBottom: 12 }}>
+                    <div style={{ fontSize: 16, fontWeight: 800, color: C.dark }}>{order.customerNama}</div>
+                    <div style={{ fontSize: 11, color: C.muted, marginTop: 2, display: "flex", alignItems: "center", gap: 4 }}>
+                        <Phone size={11} /> {order.customerHp}
                     </div>
                 </div>
 
-                {/* Items */}
-                <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.border}`, overflow: "hidden", marginBottom: 16 }}>
-                    <div style={{ padding: "12px 16px", background: C.primary, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: "white", textTransform: "uppercase", display: "flex", alignItems: "center", gap: 6 }}>
-                            <ClipboardList size={14} color="white" /> Detail Item
+                {/* ── DETAIL ITEM + KALKULASI ── */}
+                <div style={{ border: `1px solid ${C.border}`, borderRadius: 10, overflow: "hidden", marginBottom: 14 }}>
+
+                    {/* Header tabel */}
+                    <div style={{ background: C.primary, padding: "7px 13px" }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: "white", textTransform: "uppercase", letterSpacing: ".5px" }}>
+                            Detail Item
                         </span>
-                        <span style={{ fontSize: 12, color: "rgba(255,255,255,0.8)" }}>{order.items.length} item</span>
                     </div>
 
-                    {order.items.map((item, i) => {
-                        const belumDiukur = item.satuan === "meter" && (!item.luas || item.luas === 0);
+                    {/* Item list */}
+                    {order.items.map((it, i) => {
+                        const belumDiukur = it.satuan === "meter" && (!it.luas || it.luas === 0);
                         return (
-                            <div key={i} style={{
-                                padding: "12px 16px",
-                                borderBottom: i < order.items.length - 1 ? `1px solid ${C.border}` : "none",
-                                display: "flex", justifyContent: "space-between", alignItems: "flex-start",
-                            }}>
+                            <div key={i} style={{ padding: "9px 13px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                                 <div style={{ flex: 1 }}>
-                                    <div style={{ fontSize: 13, fontWeight: 600, color: C.dark }}>{item.nama}</div>
-                                    {belumDiukur ? (
-                                        <div style={{ fontSize: 11, color: C.warning, marginTop: 2, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
-                                            <AlertTriangle size={12} color={C.warning} /> Menunggu pengukuran
-                                        </div>
-                                    ) : item.satuan === "meter" ? (
-                                        <div style={{ fontSize: 11, color: C.muted, marginTop: 2, display: "flex", alignItems: "center", gap: 4 }}>
-                                            <Ruler size={12} color={C.muted} />
-                                            {(item.luas || 0).toFixed(2)} m² × {rupiah(item.harga)}/m²
-                                        </div>
-                                    ) : (
-                                        <div style={{ fontSize: 11, color: C.muted, marginTop: 2, display: "flex", alignItems: "center", gap: 4 }}>
-                                            <Package size={12} color={C.muted} />
-                                            {item.qty} pcs × {rupiah(item.harga)}
-                                        </div>
-                                    )}
+                                    <div style={{ fontSize: 13, fontWeight: 600, color: C.dark }}>{it.nama}</div>
+                                    <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>
+                                        {belumDiukur ? (
+                                            <span style={{ color: C.warn, fontWeight: 600, display: "flex", alignItems: "center", gap: 3 }}>
+                                                <AlertTriangle size={10} /> Menunggu pengukuran
+                                            </span>
+                                        ) : it.satuan === "meter" ? (
+                                            <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                                                <Ruler size={10} /> {(it.luas || 0).toFixed(2)} m² × {rupiah(it.harga)}/m²
+                                            </span>
+                                        ) : (
+                                            <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                                                <Package size={10} /> {it.qty} pcs × {rupiah(it.harga)}
+                                            </span>
+                                        )}
+                                    </div>
                                 </div>
-                                <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 14, fontWeight: 700, color: belumDiukur ? C.muted : C.dark, marginLeft: 12 }}>
-                                    {belumDiukur ? "—" : rupiah(item.subtotal)}
-                                </div>
+                                <span style={{ fontSize: 13, fontWeight: 700, color: belumDiukur ? C.muted : C.dark, marginLeft: 10, flexShrink: 0 }}>
+                                    {belumDiukur ? "—" : rupiah(it.subtotal)}
+                                </span>
                             </div>
                         );
                     })}
 
-                    {/* Diskon */}
-                    {order.diskon?.amount > 0 && (
-                        <>
-                            <div style={{ padding: "8px 16px", display: "flex", justifyContent: "space-between", borderTop: `1px solid ${C.border}` }}>
-                                <span style={{ fontSize: 12, color: C.muted }}>Subtotal</span>
-                                <span style={{ fontSize: 12, color: C.muted }}>{rupiah(order.subtotal)}</span>
-                            </div>
-                            <div style={{ padding: "8px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", background: C.successBg }}>
-                                <span style={{ fontSize: 12, color: "#15803D", fontWeight: 600, display: "flex", alignItems: "center", gap: 5 }}>
-                                    <Scissors size={13} color="#15803D" />
-                                    Diskon {order.diskon.type === "persen" ? `${order.diskon.nilai}%` : ""}
-                                </span>
-                                <span style={{ fontSize: 12, color: "#15803D", fontWeight: 600 }}>-{rupiah(order.diskon.amount)}</span>
-                            </div>
-                        </>
+                    {/* Subtotal (kalau lebih dari 1 item) */}
+                    {order.items.length > 1 && (
+                        <div style={{ padding: "7px 13px", display: "flex", justifyContent: "space-between", fontSize: 12, borderBottom: `.5px solid ${C.border}`, background: C.surface }}>
+                            <span style={{ color: C.muted }}>Subtotal</span>
+                            <span style={{ fontWeight: 600 }}>{rupiah(subtotal)}</span>
+                        </div>
                     )}
 
-                    {/* Total */}
-                    <div style={{ padding: "14px 16px", background: C.primary100, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <span style={{ fontSize: 14, fontWeight: 800, color: C.primary700 }}>Total</span>
-                        <span style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 20, fontWeight: 800, color: C.primary700 }}>
-                            {rupiah(order.total)}
+                    {/* Diskon */}
+                    {diskonAmt > 0 && (
+                        <div style={{ padding: "7px 13px", display: "flex", justifyContent: "space-between", fontSize: 12, color: C.okTx, borderBottom: `.5px solid ${C.border}`, background: C.surface }}>
+                            <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                                <Tag size={11} /> Diskon
+                                {order.diskon?.type === "persen" ? ` (${order.diskon.nilai}%)` : ""}
+                            </span>
+                            <span style={{ fontWeight: 700 }}>−{rupiah(diskonAmt)}</span>
+                        </div>
+                    )}
+
+                    {/* DP — hanya Home Service */}
+                    {isHS && dpAmt > 0 && (
+                        <div style={{ padding: "7px 13px", display: "flex", justifyContent: "space-between", fontSize: 12, color: C.amberTx, borderBottom: `.5px solid ${C.border}`, background: C.surface }}>
+                            <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                                <Banknote size={11} /> DP ({order.metode})
+                            </span>
+                            <span style={{ fontWeight: 700 }}>−{rupiah(dpAmt)}</span>
+                        </div>
+                    )}
+
+                    {/* Total Akhir */}
+                    <div style={{ padding: "11px 13px", background: C.p100, display: "flex", justifyContent: "space-between" }}>
+                        <span style={{ fontSize: 13, fontWeight: 800, color: C.p700 }}>Total Akhir</span>
+                        <span style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 17, fontWeight: 800, color: C.p700 }}>
+                            {rupiah(totalAkhir)}
                         </span>
                     </div>
                 </div>
 
-                {/* Badge status */}
-                <div style={{ display: "flex", gap: 8, marginBottom: 24, flexWrap: "wrap" }}>
-                    <span className={`badge ${isLunas ? "badge-success" : "badge-warning"}`} style={{ padding: "6px 12px", fontSize: 12 }}>
-                        {isLunas
-                            ? <CheckCircle size={12} color="#15803D" />
-                            : <Clock size={12} color="#D97706" />}
-                        {isLunas ? "Lunas" : "Belum Lunas"}
+                {/* ── BADGES ── */}
+                <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
+                    <span className={`badge ${isLunas ? "bg-ok" : "bg-warn"}`} style={{ padding: "4px 9px" }}>
+                        {isLunas ? <><CheckCircle size={9} /> Lunas</> : <><Clock size={9} /> Belum Lunas</>}
                     </span>
-                    <span className="badge badge-gray" style={{ padding: "6px 12px", fontSize: 12 }}>
-                        <CreditCard size={12} color="#64748B" />
-                        {order.metode || "Belum Payment"}
+                    <span className="badge bg-gray" style={{ padding: "4px 9px" }}>
+                        <CreditCard size={9} /> {order.metode || "Belum Payment"}
                     </span>
-                    <span className="badge badge-primary" style={{ padding: "6px 12px", fontSize: 12 }}>
-                        <ClipboardList size={12} color={C.primary700} />
-                        {order.status || "Waiting List"}
-                    </span>
+                    {isHS && (
+                        <span className="badge bg-amber" style={{ padding: "4px 9px" }}>
+                            <Home size={9} /> Home Service
+                        </span>
+                    )}
                 </div>
 
-                {/* CTA — Cetak */}
-                <div className="no-print" style={{ marginBottom: 12 }}>
-                    <button className="btn btn-primary" onClick={() => window.print()}>
-                        <Printer size={16} /> Cetak Nota
+                {/* ── CATATAN ── */}
+                {order.catatan ? (
+                    <div style={{ background: C.warnBg, border: `1px solid ${C.warn}`, borderRadius: 8, padding: "8px 12px", marginBottom: 14, fontSize: 12, color: C.warnTx, fontStyle: "italic" }}>
+                        📝 {order.catatan}
+                    </div>
+                ) : null}
+
+                {/* ── ACTIONS ── */}
+                <div className="no-print" style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+                    {isAdmin && (
+                        <a href="/admin/kasir" style={{ flex: 1, textDecoration: "none" }}>
+                            <button style={{ width: "100%", padding: "11px 16px", borderRadius: 10, fontSize: 13, fontWeight: 700, border: `1.5px solid ${C.primary}`, background: "none", color: C.primary, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                                <ArrowLeft size={13} /> Kembali
+                            </button>
+                        </a>
+                    )}
+                    <button
+                        onClick={() => window.print()}
+                        style={{ flex: 1, padding: "11px 16px", borderRadius: 10, fontSize: 13, fontWeight: 700, border: "none", background: C.primary, color: "white", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
+                    >
+                        <Printer size={13} /> Cetak Nota
                     </button>
                 </div>
 
-                {/* Tombol ke admin — hanya jika sudah login sebagai admin */}
-                {isAdmin && (
-                    <a href="/admin/kasir" className="no-print" style={{ display: "block", marginBottom: 12 }}>
-                        <button className="btn btn-ghost">
-                            <ArrowLeft size={16} /> Kembali ke Kasir
-                        </button>
-                    </a>
-                )}
-
-                {/* Footer */}
-                <div style={{ textAlign: "center", marginTop: 24, paddingTop: 16, borderTop: `1px dashed ${C.border}` }}>
-                    <div style={{ fontSize: 11, color: C.muted }}>Terima kasih telah mempercayai</div>
-                    <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 14, fontWeight: 700, color: C.primary, marginTop: 4, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-                        <Layers size={14} color={C.primary} /> Carpetology
+                {/* ── FOOTER ── */}
+                <div style={{ textAlign: "center", marginTop: 20, paddingTop: 14, borderTop: `1px dashed ${C.border}` }}>
+                    <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 12, fontWeight: 700, color: C.primary, display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
+                        <Layers size={12} /> Carpetology
                     </div>
-                    <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>
-                        Lacak progres cuci Anda dengan mudah
-                    </div>
+                    <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>Terima kasih atas kepercayaan Anda</div>
                 </div>
+
             </div>
         </div>
     );

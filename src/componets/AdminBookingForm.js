@@ -7,24 +7,25 @@ import {
     Check, Save, Loader2, CheckCircle, Layers,
     FileText, CalendarDays, Clock,
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 // ─── COLORS ───────────────────────────────────────────────────────────────────
 const C = {
-    primary:    '#04CDCD',
+    primary: '#04CDCD',
     primary600: '#03A8A8',
     primary700: '#028585',
     primary100: '#E0FAFA',
-    primary50:  '#F0FEFE',
-    dark:       '#1A2E35',
-    darkMid:    '#0d2028',
-    muted:      '#6B8894',
-    border:     '#e2e8f0',
-    surface:    '#f8fafc',
-    white:      '#FFFFFF',
-    success:    '#22C55E',
-    successBg:  '#dcfce7',
-    danger:     '#EF4444',
-    dangerBg:   '#fee2e2',
+    primary50: '#F0FEFE',
+    dark: '#1A2E35',
+    darkMid: '#0d2028',
+    muted: '#6B8894',
+    border: '#e2e8f0',
+    surface: '#f8fafc',
+    white: '#FFFFFF',
+    success: '#22C55E',
+    successBg: '#dcfce7',
+    danger: '#EF4444',
+    dangerBg: '#fee2e2',
 };
 
 // ─── FIELD INPUT ──────────────────────────────────────────────────────────────
@@ -73,9 +74,9 @@ function StepBar({ current }) {
     return (
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: 24 }}>
             {steps.map((label, i) => {
-                const num    = i + 1;
+                const num = i + 1;
                 const isDone = current > num;
-                const isAct  = current === num;
+                const isAct = current === num;
                 return (
                     <React.Fragment key={i}>
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
@@ -115,12 +116,17 @@ function StepBar({ current }) {
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 export default function AdminBookingForm() {
     const navigate = useNavigate();
-    const [step, setStep]   = useState(1);
-    const [form, setForm]   = useState({ nama: '', no_hp: '', maps_lokasi: '', tanggal: '', sesi: '', keterangan: '' });
+    const [step, setStep] = useState(1);
+    const [form, setForm] = useState({ nama: '', no_hp: '', maps_lokasi: '', tanggal: '', sesi: '', keterangan: '' });
     const [loading, setLoading] = useState(false);
     const [saved, setSaved] = useState(false);
     const [existing, setExisting] = useState([]);
-
+    const { user } = useAuth();
+    useEffect(() => {
+        if (user && user.role !== 'admin' && user.role !== 'cs') {
+            navigate('/');
+        }
+    }, [user]);
     useEffect(() => {
         const unsub = onSnapshot(collection(db, 'bookings'), (snap) => {
             setExisting(snap.docs.map(d => d.data()));
@@ -166,7 +172,7 @@ export default function AdminBookingForm() {
 
     const SESI = [
         { val: 1, label: 'Sesi 1', time: '09:00 – 11:00', Icon: Sunrise, color: '#f59e0b', bg: '#fff7ed' },
-        { val: 2, label: 'Sesi 2', time: '13:00 – 15:00', Icon: Sun,     color: '#0ea5e9', bg: '#f0f9ff' },
+        { val: 2, label: 'Sesi 2', time: '13:00 – 15:00', Icon: Sun, color: '#0ea5e9', bg: '#f0f9ff' },
     ];
 
     // ── Success screen ──
@@ -263,9 +269,9 @@ export default function AdminBookingForm() {
                             <div style={S.fieldLabel}>Pilih Sesi</div>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                                 {SESI.map(s => {
-                                    const booked   = isSesiBooked(form.tanggal, s.val);
+                                    const booked = isSesiBooked(form.tanggal, s.val);
                                     const selected = form.sesi == s.val;
-                                    const Icon     = s.Icon;
+                                    const Icon = s.Icon;
                                     return (
                                         <div
                                             key={s.val}
@@ -342,9 +348,9 @@ export default function AdminBookingForm() {
                         <div style={{ ...S.card, marginBottom: 14 }}>
                             {[
                                 { label: 'Pelanggan', val: form.nama, Icon: User },
-                                { label: 'WhatsApp',  val: form.no_hp, Icon: Phone },
-                                { label: 'Tanggal',   val: formatTanggal(form.tanggal), Icon: CalendarDays },
-                                { label: 'Sesi',      val: form.sesi == 1 ? 'Sesi 1 — 09:00–11:00' : 'Sesi 2 — 13:00–15:00', Icon: Clock },
+                                { label: 'WhatsApp', val: form.no_hp, Icon: Phone },
+                                { label: 'Tanggal', val: formatTanggal(form.tanggal), Icon: CalendarDays },
+                                { label: 'Sesi', val: form.sesi == 1 ? 'Sesi 1 — 09:00–11:00' : 'Sesi 2 — 13:00–15:00', Icon: Clock },
                             ].map((r, i) => (
                                 <div key={i} style={{
                                     display: 'flex', alignItems: 'flex-start', gap: 12,
