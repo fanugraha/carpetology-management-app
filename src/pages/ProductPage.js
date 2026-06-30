@@ -66,7 +66,7 @@ const ProductPage = () => {
             setDeleteTarget(null);
         } catch (err) {
             console.error(err);
-            alert('Gagal menghapus produk.');
+            alert('Gagal menghapus layanan.');
         } finally {
             setDeleting(false);
         }
@@ -85,8 +85,8 @@ const ProductPage = () => {
                             <Package size={22} color="#04CDCD" />
                         </div>
                         <div>
-                            <div style={S.brand}>Produk</div>
-                            <div style={S.tagline}>Carpetology · Daftar Layanan</div>
+                            <div style={S.brand}>Layanan</div>
+                            <div style={S.tagline}>Carpetology ID · Daftar Layanan</div>
                         </div>
                     </div>
                 </div>
@@ -98,7 +98,7 @@ const ProductPage = () => {
                     </span>
                     <input
                         type="text"
-                        placeholder="Cari produk..."
+                        placeholder="Cari layanan..."
                         value={search}
                         onChange={e => setSearch(e.target.value)}
                         style={S.searchInput}
@@ -114,10 +114,10 @@ const ProductPage = () => {
             {/* ── Stats bar (overlap hero) ── */}
             <div style={S.statsBar}>
                 <span style={S.statsLabel}>
-                    {search ? `Hasil: "${search}"` : 'Total Produk'}
+                    {search ? `Hasil: "${search}"` : 'Total Layanan'}
                 </span>
                 <span style={S.statsCount}>
-                    {loading ? '...' : `${filtered.length} produk`}
+                    {loading ? '...' : `${filtered.length} layanan`}
                 </span>
             </div>
 
@@ -166,12 +166,12 @@ const ProductPage = () => {
                                 : <Package size={40} color="#cbd5e1" />}
                         </div>
                         <div style={{ fontWeight: 700, color: '#1e293b', marginBottom: 6 }}>
-                            {search ? 'Produk tidak ditemukan' : 'Belum ada produk'}
+                            {search ? 'Layanan tidak ditemukan' : 'Belum ada layanan'}
                         </div>
                         <div style={{ fontSize: 13, color: '#94a3b8' }}>
                             {search
-                                ? `Tidak ada produk dengan kata "${search}"`
-                                : 'Tap tombol di bawah untuk menambahkan produk pertama'}
+                                ? `Tidak ada layanan dengan kata "${search}"`
+                                : 'Tap tombol di bawah untuk menambahkan layanan pertama'}
                         </div>
                     </div>
                 )}
@@ -181,7 +181,7 @@ const ProductPage = () => {
             <div style={S.addWrap}>
                 <button style={S.btnAdd} onClick={() => navigate('/admin/tambah-produk')}>
                     <Plus size={18} color="#fff" />
-                    Tambah Produk
+                    Tambah Layanan
                 </button>
             </div>
 
@@ -205,7 +205,7 @@ const ProductPage = () => {
                                 <Trash2 size={28} color="#ef4444" />
                             </div>
                         </div>
-                        <h2 style={S.modalTitle}>Hapus Produk?</h2>
+                        <h2 style={S.modalTitle}>Hapus Layanan?</h2>
                         <p style={S.modalSub}>
                             <strong>{deleteTarget.nama}</strong> akan dihapus permanen dan tidak bisa dikembalikan.
                         </p>

@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import {
     ArrowLeft, Phone, CheckCircle, Clock, WashingMachine,
     CreditCard, Package, FileText, Ruler, AlertTriangle,
-    Trash2, Pencil,
+    Trash2, Pencil, Truck
 } from 'lucide-react';
 
 function OrderDetail({ order, onBack, onEditClick, onDeleteClick }) {
@@ -23,21 +23,17 @@ function OrderDetail({ order, onBack, onEditClick, onDeleteClick }) {
 
     const getStatusConfig = (status) => {
         switch (status) {
-            case 'Ready Anter': return {
-                label: 'Ready Anter',
-                icon: <CheckCircle size={11} />,
-                bg: '#dcfce7', color: '#15803d', border: '#86efac',
-            };
-            case 'Sudah Dicuci': return {
-                label: 'Sudah Dicuci',
-                icon: <WashingMachine size={11} />,
-                bg: '#fef3c7', color: '#b45309', border: '#fcd34d',
-            };
-            default: return {
-                label: 'Waiting List',
-                icon: <Clock size={11} />,
-                bg: '#f1f5f9', color: '#475569', border: '#cbd5e1',
-            };
+            case 'Ready Anter':
+            case 'Siap Diambil':
+                return { label: 'Siap Diambil', icon: <CheckCircle size={11} />, bg: '#dcfce7', color: '#15803d', border: '#86efac' };
+            case 'Siap Diantar':
+                return { label: 'Siap Diantar', icon: <Truck size={11} />, bg: '#dbeafe', color: '#1d4ed8', border: '#93c5fd' };
+            case 'Sudah Diantar':
+                return { label: 'Sudah Diantar', icon: <CheckCircle size={11} />, bg: '#dcfce7', color: '#15803d', border: '#86efac' };
+            case 'Sudah Dicuci':
+                return { label: 'Sudah Dicuci', icon: <WashingMachine size={11} />, bg: '#fef3c7', color: '#b45309', border: '#fcd34d' };
+            default:
+                return { label: 'Waiting List', icon: <Clock size={11} />, bg: '#f1f5f9', color: '#475569', border: '#cbd5e1' };
         }
     };
 

@@ -84,7 +84,7 @@ function App() {
 
                     {/* ── Admin + CS only ── */}
                     <Route path="/admin/jadwal-home-visit" element={
-                        <CSAdminRoute><JadwalHomeVisit /></CSAdminRoute>
+                        <StaffRoute><JadwalHomeVisit /></StaffRoute>
                     } />
 
                     {/* ── Semua yang login (admin, cs, staff) ── */}

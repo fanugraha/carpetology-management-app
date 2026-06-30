@@ -188,7 +188,7 @@ function TrackingDetailPage() {
                         <div style={S.logoIconWrap}>
                             <Layers size={18} color="#04CDCD" />
                         </div>
-                        <div style={S.brand}>Carpetology</div>
+                        <div style={S.brand}>Carpetology ID</div>
                     </div>
                 </div>
 
@@ -323,7 +323,7 @@ function TrackingDetailPage() {
                 {/* Footer */}
                 <div style={S.footer}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontWeight: 700, color: '#04CDCD', marginBottom: 4 }}>
-                        <Layers size={13} /> Carpetology
+                        <Layers size={13} /> Carpetology ID
                     </div>
                     <div style={{ fontSize: 11, color: '#94a3b8' }}>Jasa Cuci Karpet & Laundry Professional</div>
                     <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>

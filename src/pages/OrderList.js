@@ -232,6 +232,43 @@ function useNotifTTS() {
 }
 
 // ─────────────────────────────────────────────
+// DELIVERY TYPE HELPER
+// ambil_sendiri : final = 'Siap Diambil'
+// antar_jemput  : final = 'Sudah Diantar'
+// 'Ready Anter' tetap didukung sebagai legacy
+// ─────────────────────────────────────────────
+const isFinalStatus = (order) => {
+    const s = order.status_order || order.status;
+    if (s === 'Ready Anter') return true;
+    const deliveryType = order.delivery_type === 'antar_jemput' ? 'antar_jemput' : 'ambil_sendiri';
+    return s === (deliveryType === 'antar_jemput' ? 'Sudah Diantar' : 'Siap Diambil');
+};
+
+// ─────────────────────────────────────────────
+// STATIC HELPER
+// ─────────────────────────────────────────────
+function hitungHariKerjaStatic(tglStr) {
+    if (!tglStr || typeof tglStr !== 'string') return 0;
+    const bulanIndo = {
+        'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'Mei': 4, 'Jun': 5,
+        'Jul': 6, 'Ags': 7, 'Sep': 8, 'Okt': 9, 'Nov': 10, 'Des': 11
+    };
+    const parts = tglStr.split(' ');
+    if (parts.length < 3) return 0;
+    const tglMasuk = new Date(parts[2], bulanIndo[parts[1]], parseInt(parts[0]));
+    tglMasuk.setHours(0, 0, 0, 0);
+    const hariIni = new Date();
+    hariIni.setHours(0, 0, 0, 0);
+    let hariKerja = 0;
+    let cursor = new Date(tglMasuk);
+    while (cursor <= hariIni) {
+        if (cursor.getDay() !== 0) hariKerja++;
+        cursor.setDate(cursor.getDate() + 1);
+    }
+    return hariKerja;
+}
+
+// ─────────────────────────────────────────────
 // BUAT TEKS BRIEFING
 // ─────────────────────────────────────────────
 function buatTeksBriefing(orders) {
@@ -410,30 +447,6 @@ function CheckInModal({ orders, onClose }) {
 }
 
 // ─────────────────────────────────────────────
-// STATIC HELPER
-// ─────────────────────────────────────────────
-function hitungHariKerjaStatic(tglStr) {
-    if (!tglStr || typeof tglStr !== 'string') return 0;
-    const bulanIndo = {
-        'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'Mei': 4, 'Jun': 5,
-        'Jul': 6, 'Ags': 7, 'Sep': 8, 'Okt': 9, 'Nov': 10, 'Des': 11
-    };
-    const parts = tglStr.split(' ');
-    if (parts.length < 3) return 0;
-    const tglMasuk = new Date(parts[2], bulanIndo[parts[1]], parseInt(parts[0]));
-    tglMasuk.setHours(0, 0, 0, 0);
-    const hariIni = new Date();
-    hariIni.setHours(0, 0, 0, 0);
-    let hariKerja = 0;
-    let cursor = new Date(tglMasuk);
-    while (cursor <= hariIni) {
-        if (cursor.getDay() !== 0) hariKerja++;
-        cursor.setDate(cursor.getDate() + 1);
-    }
-    return hariKerja;
-}
-
-// ─────────────────────────────────────────────
 // TIER PRIORITY HELPER
 // ─────────────────────────────────────────────
 function getTier(order) {
@@ -468,12 +481,12 @@ function QuickActions({ onHomeVisit, onReminder, onPickup }) {
             iconBg: '#e0fafa',
             onClick: onPickup,
         },
-    ].filter(a => a.onClick !== null); // ← tambah ini
+    ].filter(a => a.onClick !== null);
 
     return (
         <div style={{
             ...S.quickActionsWrap,
-            gridTemplateColumns: `repeat(${actions.length}, 1fr)`, // ← supaya grid menyesuaikan
+            gridTemplateColumns: `repeat(${actions.length}, 1fr)`,
         }}>
             {actions.map((a) => (
                 <button key={a.label} onClick={a.onClick} style={S.quickActionItem}>
@@ -533,8 +546,9 @@ function OrderList({ searchQuery, setSearchQuery, activeFilter, setActiveFilter,
         return ts?.seconds ? new Date(ts.seconds * 1000) : new Date(ts);
     };
 
+    // ── isAutoHidden: pakai isFinalStatus bukan hardcode 'Ready Anter' ──
     const isAutoHidden = (order) => {
-        if (order.status !== 'Ready Anter') return false;
+        if (!isFinalStatus(order)) return false;
         const readyDate = getReadyTimestamp(order);
         if (!readyDate) return false;
         return (new Date() - readyDate) / (1000 * 60 * 60 * 24) >= 7;
@@ -586,6 +600,7 @@ function OrderList({ searchQuery, setSearchQuery, activeFilter, setActiveFilter,
                         status: tx.status_order || tx.status || 'Waiting List',
                         statusBayar: tx.statusBayar || 'Belum Lunas',
                         metode_pembayaran: tx.metode_pembayaran || tx.metode || '',
+                        delivery_type: tx.delivery_type || 'ambil_sendiri',
                         tanggal: tx.tanggal || (tx.created_at?.seconds
                             ? new Date(tx.created_at.seconds * 1000).toLocaleDateString('id-ID', {
                                 day: '2-digit', month: 'short', year: 'numeric'
@@ -631,7 +646,7 @@ function OrderList({ searchQuery, setSearchQuery, activeFilter, setActiveFilter,
                         const isKritis = hariKe >= 5;
                         tambahNotif(
                             isKritis ? 'Order Kritis' : 'Status Berubah',
-                            `${nama}: ${statusLama} Menjadi ${statusBaru}`,
+                            `${nama}: ${statusLama} → ${statusBaru}`,
                             isKritis ? 'kritis' : 'default'
                         );
                     }
@@ -647,10 +662,11 @@ function OrderList({ searchQuery, setSearchQuery, activeFilter, setActiveFilter,
         if (isLoading || loadNotifShownRef.current) return;
         loadNotifShownRef.current = true;
 
+        // ── pakai isFinalStatus bukan hardcode 'Ready Anter' ──
         const aktif = transactions.filter(
             o => !o.is_hidden && !isAutoHidden(o) &&
                 o.layanan_type !== 'home_visit' &&
-                o.status !== 'Ready Anter'
+                !isFinalStatus(o)
         );
 
         const kritis = aktif.filter(o => hitungHariKerjaStatic(o.tanggal) >= 5);
@@ -674,10 +690,11 @@ function OrderList({ searchQuery, setSearchQuery, activeFilter, setActiveFilter,
         return () => unsub();
     }, []);
 
+    // ── MODAL "SELAMAT PAGI" (CheckInModal) — DINONAKTIFKAN SEMENTARA ──
     const [showCheckIn, setShowCheckIn] = useState(false);
-    useEffect(() => {
-        if (!isLoading && (isAdmin || isStaff)) setShowCheckIn(true);
-    }, [isLoading, isAdmin, isStaff]);
+    // useEffect(() => {
+    //     if (!isLoading && (isAdmin || isStaff)) setShowCheckIn(true);
+    // }, [isLoading, isAdmin, isStaff]);
 
     const handleCloseCheckIn = () => setShowCheckIn(false);
 
@@ -685,16 +702,22 @@ function OrderList({ searchQuery, setSearchQuery, activeFilter, setActiveFilter,
         o => !o.is_hidden && !isAutoHidden(o) && o.layanan_type !== 'home_visit'
     );
 
-    const getCount = (status) =>
-        status === 'Semua'
-            ? visibleTransactions.length
-            : visibleTransactions.filter(o => o.status === status).length;
+    // ── getCount: support filter 'Final' untuk semua status selesai ──
+    const getCount = (status) => {
+        if (status === 'Semua') return visibleTransactions.length;
+        if (status === 'Final') return visibleTransactions.filter(o => isFinalStatus(o)).length;
+        return visibleTransactions.filter(o => o.status === status).length;
+    };
 
+    // ── applyFilter: 'Final' menggantikan 'Ready Anter' ──
     const applyFilter = (list) => list.filter(o => {
         if (o.is_hidden || isAutoHidden(o)) return false;
         const q = (searchQuery || '').toLowerCase();
-        return ((o?.nama || '').toLowerCase().includes(q) || (o?.hp || '').toString().includes(q)) &&
-            (activeFilter === 'Semua' || o.status === activeFilter);
+        return (
+            ((o?.nama || '').toLowerCase().includes(q) || (o?.hp || '').toString().includes(q)) &&
+            (activeFilter === 'Semua' ||
+                (activeFilter === 'Final' ? isFinalStatus(o) : o.status === activeFilter))
+        );
     });
 
     const sortList = (list) => [...list].sort((a, b) => {
@@ -708,16 +731,21 @@ function OrderList({ searchQuery, setSearchQuery, activeFilter, setActiveFilter,
     });
 
     const filtered = applyFilter(visibleTransactions);
-    const orderAktif = sortList(filtered.filter(o => o.status !== 'Ready Anter'));
-    const orderReady = sortList(filtered.filter(o => o.status === 'Ready Anter'));
-    const totalAktif = visibleTransactions.filter(o => o.status !== 'Ready Anter').length;
 
-    const aktifSemua = visibleTransactions.filter(o => o.status !== 'Ready Anter');
-    const tugasKritis = aktifSemua.filter(o => hitungHariKerja(o.tanggal) >= 5);
-    const tugasMendekati = aktifSemua.filter(o => hitungHariKerja(o.tanggal) === 4);
-    const tugasPerlu = aktifSemua.filter(o => hitungHariKerja(o.tanggal) === 3);
-    const tugasWaiting = aktifSemua.filter(o => o.status === 'Waiting List' && hitungHariKerja(o.tanggal) < 3);
-    const tugasHariIni = [...tugasKritis, ...tugasMendekati, ...tugasPerlu, ...tugasWaiting];
+    // ── split aktif vs selesai pakai isFinalStatus ──
+    const orderAktif = sortList(filtered.filter(o => !isFinalStatus(o)));
+    const orderReady = sortList(filtered.filter(o => isFinalStatus(o)));
+
+    // ── totalAktif pakai isFinalStatus ──
+    const totalAktif = visibleTransactions.filter(o => !isFinalStatus(o)).length;
+
+    // // ── aktifSemua untuk tugas hari ini ──    dd
+    // const aktifSemua = visibleTransactions.filter(o => !isFinalStatus(o));
+    // const tugasKritis = aktifSemua.filter(o => hitungHariKerja(o.tanggal) >= 5);
+    // const tugasMendekati = aktifSemua.filter(o => hitungHariKerja(o.tanggal) === 4);
+    // const tugasPerlu = aktifSemua.filter(o => hitungHariKerja(o.tanggal) === 3);
+    // const tugasWaiting = aktifSemua.filter(o => o.status === 'Waiting List' && hitungHariKerja(o.tanggal) < 3);
+    // const tugasHariIni = [...tugasKritis, ...tugasMendekati, ...tugasPerlu, ...tugasWaiting];
 
     const generateReminderText = () => {
         const now = new Date();
@@ -731,13 +759,13 @@ function OrderList({ searchQuery, setSearchQuery, activeFilter, setActiveFilter,
         ].join('-');
         const sesiLabel = (sesi) => Number(sesi) === 1 ? 'Sesi 1 (09:00-11:00)' : 'Sesi 2 (13:00-15:00)';
         const homeVisitHariIni = bookings.filter(b => b.status === 'confirmed' && b.tanggal === hariIniStr);
-        const aktif = visibleTransactions.filter(o => o.status !== 'Ready Anter');
+        const aktif = visibleTransactions.filter(o => !isFinalStatus(o));
         const lewatBatas = aktif.filter(o => hitungHariKerja(o.tanggal) > 5);
         const mendekati = aktif.filter(o => { const h = hitungHariKerja(o.tanggal); return h === 4 || h === 5; });
         const waiting = aktif.filter(o => o.status === 'Waiting List');
         const formatBaris = (o) => `- ${o.nama} — ${o.tanggal} (hari ke-${hitungHariKerja(o.tanggal)})\n  ${o.hp}`;
 
-        let pesan = `*Carpetology Daily Update*\n${tglStr}\n\n`;
+        let pesan = `*Carpetology ID Daily Update*\n${tglStr}\n\n`;
         pesan += `*JADWAL HOME VISIT — HARI INI*\n`;
         pesan += homeVisitHariIni.length > 0
             ? homeVisitHariIni.map(b => {
@@ -762,9 +790,10 @@ function OrderList({ searchQuery, setSearchQuery, activeFilter, setActiveFilter,
     return (
         <div style={S.page}>
 
-            {showCheckIn && (isAdmin || isStaff) && (
+            {/* ── MODAL "SELAMAT PAGI" — DINONAKTIFKAN SEMENTARA ── */}
+            {/* {showCheckIn && (isAdmin || isStaff) && (
                 <CheckInModal orders={visibleTransactions} onClose={handleCloseCheckIn} />
-            )}
+            )} */}
 
             <NotifToast notifs={notifs} onDismiss={dismissNotif} />
 
@@ -775,7 +804,7 @@ function OrderList({ searchQuery, setSearchQuery, activeFilter, setActiveFilter,
                             <Layers size={20} color="#04CDCD" />
                         </div>
                         <div>
-                            <div style={S.brand}>Carpetology</div>
+                            <div style={S.brand}>Carpetology ID</div>
                             <div style={S.tagline}>
                                 {isAdmin ? 'Admin Dashboard' : isCS ? 'CS Dashboard' : 'Staff Dashboard'}
                             </div>
@@ -793,9 +822,10 @@ function OrderList({ searchQuery, setSearchQuery, activeFilter, setActiveFilter,
                         <span style={S.statLbl}>Order Aktif</span>
                     </div>
                     <div style={S.statDivider} />
+                    {/* ── label & count pakai isFinalStatus via getCount('Final') ── */}
                     <div style={S.statChip}>
-                        <span style={{ ...S.statNum, color: '#86efac' }}>{getCount('Ready Anter')}</span>
-                        <span style={S.statLbl}>Ready Anter</span>
+                        <span style={{ ...S.statNum, color: '#86efac' }}>{getCount('Final')}</span>
+                        <span style={S.statLbl}>Selesai</span>
                     </div>
                     {isAdmin && (
                         <>
@@ -826,12 +856,13 @@ function OrderList({ searchQuery, setSearchQuery, activeFilter, setActiveFilter,
                     )}
                 </div>
 
+                {/* ── Filter chips: 'Ready Anter' → 'Final' ── */}
                 <div style={S.filterRow}>
                     {[
                         { id: 'Semua', label: `Semua (${getCount('Semua')})`, icon: <LayoutList size={11} /> },
                         { id: 'Waiting List', label: `Waiting (${getCount('Waiting List')})`, icon: <Clock size={11} /> },
                         { id: 'Sudah Dicuci', label: `Dicuci (${getCount('Sudah Dicuci')})`, icon: <CheckCircle size={11} /> },
-                        { id: 'Ready Anter', label: `Ready (${getCount('Ready Anter')})`, icon: <CheckCircle size={11} /> },
+                        { id: 'Final', label: `Selesai (${getCount('Final')})`, icon: <CheckCircle size={11} /> },
                     ].map((item) => (
                         <button
                             key={item.id}
@@ -849,17 +880,17 @@ function OrderList({ searchQuery, setSearchQuery, activeFilter, setActiveFilter,
                     ))}
                 </div>
 
-                {/* ── QUICK ACTIONS — hanya Admin & CS ── */}
+                {/* ── QUICK ACTIONS ── */}
                 {(isAdmin || isCS || isStaff) && (
                     <QuickActions
-                        onHomeVisit={isAdmin || isCS ? () => navigate('/admin/jadwal-home-visit') : null}
+                        onHomeVisit={isAdmin || isCS || isStaff ? () => navigate('/admin/jadwal-home-visit') : null}
                         onReminder={isAdmin || isCS ? handleKirimReminder : null}
                         onPickup={() => navigate('/admin/jadwal-pickup')}
                     />
                 )}
 
-                {/* ── TUGAS HARI INI ── */}
-                {(isAdmin || isStaff) && !isLoading && tugasHariIni.length > 0 && (
+                {/* ── TUGAS HARI INI — DINONAKTIFKAN SEMENTARA ── */}
+                {/* {(isAdmin || isStaff) && !isLoading && tugasHariIni.length > 0 && (
                     <div style={S.tugasWrap}>
                         <div style={S.tugasHeader}>
                             <AlertTriangle size={13} color="#f97316" />
@@ -897,7 +928,7 @@ function OrderList({ searchQuery, setSearchQuery, activeFilter, setActiveFilter,
                             })}
                         </div>
                     </div>
-                )}
+                )} */}
 
                 <div style={S.sortRow}>
                     <span style={S.sortLabel}>Urutkan:</span>
@@ -946,11 +977,12 @@ function OrderList({ searchQuery, setSearchQuery, activeFilter, setActiveFilter,
                             </>
                         )}
 
+                        {/* ── Section selesai: label diperbarui ── */}
                         {orderReady.length > 0 && (
                             <>
                                 <div style={{ ...S.sectionHeader, color: '#15803d', borderLeftColor: '#22c55e' }}>
                                     <CheckCircle size={13} color="#22c55e" />
-                                    Ready Anter
+                                    Siap / Selesai
                                     <span style={{ ...S.sectionCount, backgroundColor: '#dcfce7', color: '#15803d' }}>
                                         {orderReady.length}
                                     </span>
@@ -1063,11 +1095,8 @@ const S = {
     searchClear: { position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: '#f1f5f9', border: 'none', borderRadius: '50%', width: 24, height: 24, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1 },
     filterRow: { display: 'flex', gap: 8, marginBottom: 12, overflowX: 'auto', paddingBottom: 2 },
     filterChip: { display: 'flex', alignItems: 'center', gap: 5, padding: '7px 12px', borderRadius: 20, border: '1.5px solid', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit', flexShrink: 0, transition: 'all 0.15s' },
-
-    // ── Quick Actions shortcut bar ──
     quickActionsWrap: {
         display: 'grid',
-        gridTemplateColumns: '1fr 1fr 1fr',
         gap: 8,
         marginBottom: 14,
         background: '#fff',
@@ -1104,7 +1133,6 @@ const S = {
         textAlign: 'center',
         lineHeight: 1.3,
     },
-
     tugasWrap: { background: '#fff', borderRadius: 14, border: '1.5px solid #fed7aa', marginBottom: 16, overflow: 'hidden' },
     tugasHeader: { display: 'flex', alignItems: 'center', gap: 6, padding: '10px 14px', background: '#fff7ed', fontSize: 11, fontWeight: 800, color: '#f97316', textTransform: 'uppercase', letterSpacing: '0.5px', borderBottom: '1px solid #fed7aa' },
     tugasCount: { background: '#f97316', color: '#fff', borderRadius: 10, padding: '1px 8px', fontSize: 11, marginLeft: 2 },

@@ -173,7 +173,7 @@ export default function DetailProduk() {
                         <span>Kembali</span>
                     </button>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={S.heroEyebrow}>Carpetology · Produk</div>
+                        <div style={S.heroEyebrow}>Carpetology ID · Produk</div>
                         <div style={S.heroTitle}>{displayTitle}</div>
                     </div>
                     <div style={S.heroIconWrap}>

@@ -107,7 +107,7 @@ export default function NotaPublicPage() {
         <div className="nota-root">
             <div style={{ background: C.dark, padding: "16px", textAlign: "center" }}>
                 <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 18, fontWeight: 700, color: C.primary, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-                    <Layers size={16} /> Carpetology
+                    <Layers size={16} /> Carpetology ID
                 </div>
                 <div style={{ fontSize: 10, color: C.muted, marginTop: 3 }}>Memuat nota...</div>
             </div>
@@ -123,7 +123,7 @@ export default function NotaPublicPage() {
         <div className="nota-root">
             <div style={{ background: C.dark, padding: "16px", textAlign: "center" }}>
                 <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 18, fontWeight: 700, color: C.primary, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-                    <Layers size={16} /> Carpetology
+                    <Layers size={16} /> Carpetology ID
                 </div>
             </div>
             <div style={{ textAlign: "center", padding: "60px 20px", color: C.muted }}>
@@ -150,7 +150,7 @@ export default function NotaPublicPage() {
             {/* ── HEADER ── */}
             <div style={{ background: C.dark, padding: "16px", textAlign: "center" }}>
                 <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 18, fontWeight: 700, color: C.primary, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-                    <Layers size={16} /> Carpetology
+                    <Layers size={16} /> Carpetology ID
                 </div>
                 <div style={{ fontSize: 10, color: C.muted, marginTop: 3 }}>{order.notaId}</div>
             </div>
@@ -302,7 +302,7 @@ export default function NotaPublicPage() {
                 {/* ── FOOTER ── */}
                 <div style={{ textAlign: "center", marginTop: 20, paddingTop: 14, borderTop: `1px dashed ${C.border}` }}>
                     <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 12, fontWeight: 700, color: C.primary, display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
-                        <Layers size={12} /> Carpetology
+                        <Layers size={12} /> Carpetology ID
                     </div>
                     <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>Terima kasih atas kepercayaan Anda</div>
                 </div>

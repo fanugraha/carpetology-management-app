@@ -1,13 +1,120 @@
 import React, { useState } from 'react';
-import { doc, updateDoc } from "firebase/firestore";
+import {
+    doc, updateDoc, collection, addDoc, query, where, getDocs, serverTimestamp,
+} from "firebase/firestore";
 import { db } from '../firebase';
 import {
     CheckCircle, Droplets, Clock, Banknote, QrCode, Building2,
     AlertTriangle, Package, EyeOff, Loader2, ChevronDown, X,
-    Timer,
+    Timer, Truck, Store,
 } from 'lucide-react';
 
-const STATUS_OPTIONS = ['Waiting List', 'Sudah Dicuci', 'Ready Anter'];
+/* ─────────────────────────────────────────────
+   DELIVERY TYPE HELPERS
+   ambil_sendiri : Waiting List → Sudah Dicuci → Siap Diambil (final)
+   antar_jemput  : Waiting List → Sudah Dicuci → Siap Diantar → Sudah Diantar (final)
+   'Ready Anter' tetap didukung sebagai status legacy = setara Siap Diambil
+───────────────────────────────────────────── */
+const getDeliveryType = (o) => (o?.delivery_type === 'antar_jemput' ? 'antar_jemput' : 'ambil_sendiri');
+const FINAL_STATUS_BY_DELIVERY = { ambil_sendiri: 'Siap Diambil', antar_jemput: 'Sudah Diantar' };
+const STATUS_FLOW_BY_DELIVERY = {
+    ambil_sendiri: ['Waiting List', 'Sudah Dicuci', 'Siap Diambil'],
+    antar_jemput: ['Waiting List', 'Sudah Dicuci', 'Siap Diantar', 'Sudah Diantar'],
+};
+const isFinalStatus = (o) => {
+    const s = o.status_order || o.status;
+    if (s === 'Ready Anter') return true; // kompatibilitas data lama
+    return s === FINAL_STATUS_BY_DELIVERY[getDeliveryType(o)];
+};
+const STATUS_PICKER_CFG = {
+    'Waiting List': { color: '#475569', bg: '#f1f5f9', border: '#cbd5e1', Icon: Clock },
+    'Sudah Dicuci': { color: '#b45309', bg: '#fef3c7', border: '#fcd34d', Icon: Droplets },
+    'Siap Diambil': { color: '#15803d', bg: '#dcfce7', border: '#86efac', Icon: CheckCircle },
+    'Siap Diantar': { color: '#1d4ed8', bg: '#dbeafe', border: '#93c5fd', Icon: Truck },
+    'Sudah Diantar': { color: '#15803d', bg: '#dcfce7', border: '#86efac', Icon: CheckCircle },
+    'Ready Anter': { color: '#15803d', bg: '#dcfce7', border: '#86efac', Icon: CheckCircle },
+};
+
+/* ─────────────────────────────────────────────
+   AUTO-JADWAL DELIVERY (integrasi ke pickups)
+   Trigger: status order antar_jemput diubah ke 'Siap Diantar'
+   Aturan tanggal rutin (Selasa/Kamis/Sabtu):
+     - Senin  → Selasa (besok)
+     - Selasa → hari itu juga
+     - Rabu   → Kamis (besok)
+     - Kamis  → hari itu juga
+     - Jumat  → Sabtu (besok)
+     - Sabtu  → lompat ke Selasa minggu depan (bukan hari itu juga)
+     - Minggu → Selasa
+───────────────────────────────────────────── */
+function toDateKey(d) {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function getNextDeliveryDateKey(from = new Date()) {
+    const day = from.getDay(); // 0=Min ... 6=Sab
+    const d = new Date(from);
+    if (day === 2 || day === 4) {
+        // Selasa / Kamis: hari itu juga, tidak diubah
+    } else if (day === 6) {
+        // Sabtu: lompat ke Selasa minggu depan (+3 hari)
+        d.setDate(d.getDate() + 3);
+    } else {
+        // Senin→+1, Rabu→+1, Jumat→+1, Minggu→+2
+        const diffMap = { 1: 1, 3: 1, 5: 1, 0: 2 };
+        d.setDate(d.getDate() + diffMap[day]);
+    }
+    return toDateKey(d);
+}
+
+// Buat jadwal delivery otomatis untuk sebuah order, hanya jika belum ada
+// entri delivery aktif (status !== 'Dibatalkan') untuk order_id yang sama.
+async function jadwalkanDeliveryOtomatis(order) {
+    try {
+        const q = query(
+            collection(db, 'pickups'),
+            where('order_id', '==', order.id),
+            where('tipe', '==', 'delivery'),
+        );
+        const snap = await getDocs(q);
+        const sudahAdaAktif = snap.docs.some(d => d.data().status !== 'Dibatalkan');
+        if (sudahAdaAktif) return; // cegah duplikat
+
+        await addDoc(collection(db, 'pickups'), {
+            nama: order.nama || '-',
+            no_hp: order.hp || '-',
+            alamat: '',     // dibiarkan kosong, diisi manual nanti
+            catatan: '',    // dibiarkan kosong, diisi manual nanti
+            tanggal: getNextDeliveryDateKey(new Date()),
+            tipe: 'delivery',
+            status: 'Dijadwalkan',
+            order_id: order.id,
+            created_at: serverTimestamp(),
+        });
+    } catch (err) {
+        console.error('Gagal jadwalkan delivery otomatis:', err);
+    }
+}
+
+// Batalkan (soft-delete) jadwal delivery yang masih 'Dijadwalkan' untuk order
+// tertentu — dipakai saat staff salah klik & membatalkan status 'Siap Diantar'.
+// Delivery yang sudah ditandai 'Sudah Diantar' TIDAK disentuh.
+async function batalkanJadwalDeliveryJikaPending(orderId) {
+    try {
+        const q = query(
+            collection(db, 'pickups'),
+            where('order_id', '==', orderId),
+            where('tipe', '==', 'delivery'),
+            where('status', '==', 'Dijadwalkan'),
+        );
+        const snap = await getDocs(q);
+        await Promise.all(
+            snap.docs.map(d => updateDoc(doc(db, 'pickups', d.id), { status: 'Dibatalkan' }))
+        );
+    } catch (err) {
+        console.error('Gagal batalkan jadwal delivery:', err);
+    }
+}
 
 function OrderRow({ order, onClick, isReady, isAdmin, canQuickUpdate, sisaHari }) {
     const [confirmHide, setConfirmHide] = useState(false);
@@ -72,8 +179,8 @@ function OrderRow({ order, onClick, isReady, isAdmin, canQuickUpdate, sisaHari }
         return { hariKe, tglSelesai: formatSelesai, sisaKerja, sudahLewat };
     };
 
-    const getSLA = (hariKe, status) => {
-        if (status === 'Ready Anter') {
+    const getSLA = (hariKe, order) => {
+        if (isFinalStatus(order)) {
             return { color: '#22c55e', bg: '#fff', borderColor: '#f1f5f9', text: '', isAlert: false, persen: 100 };
         }
         if (!hariKe) return { color: '#cbd5e1', bg: '#fff', borderColor: '#f1f5f9', text: '', isAlert: false, persen: 0 };
@@ -94,8 +201,16 @@ function OrderRow({ order, onClick, isReady, isAdmin, canQuickUpdate, sisaHari }
     };
 
     const getStatusConfig = (status) => {
-        if (status === 'Ready Anter') return {
-            label: 'Ready Anter', bg: '#dcfce7', color: '#15803d', border: '#86efac',
+        if (status === 'Ready Anter' || status === 'Siap Diambil') return {
+            label: 'Siap Diambil', bg: '#dcfce7', color: '#15803d', border: '#86efac',
+            Icon: CheckCircle,
+        };
+        if (status === 'Siap Diantar') return {
+            label: 'Siap Diantar', bg: '#dbeafe', color: '#1d4ed8', border: '#93c5fd',
+            Icon: Truck,
+        };
+        if (status === 'Sudah Diantar') return {
+            label: 'Sudah Diantar', bg: '#dcfce7', color: '#15803d', border: '#86efac',
             Icon: CheckCircle,
         };
         if (status === 'Sudah Dicuci') return {
@@ -137,6 +252,7 @@ function OrderRow({ order, onClick, isReady, isAdmin, canQuickUpdate, sisaHari }
             setShowStatusPicker(false);
             return;
         }
+        const statusSebelumnya = order.status_order || order.status;
         try {
             setUpdatingStatus(true);
             setShowStatusPicker(false);
@@ -144,10 +260,21 @@ function OrderRow({ order, onClick, isReady, isAdmin, canQuickUpdate, sisaHari }
                 status_order: newStatus,
                 status: newStatus,
             };
-            if (newStatus === 'Ready Anter') {
+            if (newStatus === FINAL_STATUS_BY_DELIVERY[deliveryType] || newStatus === 'Ready Anter') {
                 updateData.ready_at = new Date();
             }
             await updateDoc(doc(db, "transactions", order.id), updateData);
+
+            // ── Integrasi otomatis ke jadwal delivery (khusus antar_jemput) ──
+            if (deliveryType === 'antar_jemput') {
+                if (newStatus === 'Siap Diantar') {
+                    // Order siap diantar → otomatis terjadwal di delivery rutin
+                    await jadwalkanDeliveryOtomatis(order);
+                } else if (statusSebelumnya === 'Siap Diantar' && newStatus !== 'Sudah Diantar') {
+                    // Salah klik / dikoreksi balik → batalkan jadwal yang masih pending
+                    await batalkanJadwalDeliveryJikaPending(order.id);
+                }
+            }
         } catch (err) {
             alert("Gagal update status: " + err.message);
         } finally {
@@ -156,7 +283,9 @@ function OrderRow({ order, onClick, isReady, isAdmin, canQuickUpdate, sisaHari }
     };
 
     const slaData = hitungHariKerja(order.tanggal);
-    const sla = getSLA(slaData?.hariKe, order.status);
+    const sla = getSLA(slaData?.hariKe, order);
+    const deliveryType = getDeliveryType(order);
+    const statusFlow = STATUS_FLOW_BY_DELIVERY[deliveryType];
     const metodeBadge = getMetodeBadge(order.metode_pembayaran);
     const statusCfg = getStatusConfig(order.status);
     const isLunas = order.statusBayar === 'Lunas';
@@ -261,6 +390,14 @@ function OrderRow({ order, onClick, isReady, isAdmin, canQuickUpdate, sisaHari }
                     <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={S.custName}>{order.nama || 'Tanpa Nama'}</div>
                         <div style={S.custPhone}>{order.hp || '-'}</div>
+                        {order.layanan_type !== 'homeservice' && (
+                            <div style={S.deliveryTag}>
+                                {deliveryType === 'antar_jemput'
+                                    ? <><Truck size={9} /> Antar Jemput</>
+                                    : <><Store size={9} /> Ambil Sendiri</>
+                                }
+                            </div>
+                        )}
                     </div>
                     <div style={{
                         ...S.statusBadge,
@@ -278,6 +415,14 @@ function OrderRow({ order, onClick, isReady, isAdmin, canQuickUpdate, sisaHari }
                     <div style={{ ...S.slaText, color: sla.color }}>
                         <AlertTriangle size={11} style={{ flexShrink: 0 }} />
                         {sla.text}
+                    </div>
+                )}
+
+                {/* ── Banner aksi: order siap diantar, perlu dikirim kurir ── */}
+                {(order.status_order || order.status) === 'Siap Diantar' && (
+                    <div style={S.deliverAlert}>
+                        <Truck size={12} style={{ flexShrink: 0 }} />
+                        Siap diantar — jadwalkan pengiriman ke customer
                     </div>
                 )}
 
@@ -418,12 +563,8 @@ function OrderRow({ order, onClick, isReady, isAdmin, canQuickUpdate, sisaHari }
                             </button>
                         </div>
                         <div style={S.pickerName}>{order.nama}</div>
-                        {STATUS_OPTIONS.map(status => {
-                            const cfg = {
-                                'Waiting List': { color: '#475569', bg: '#f1f5f9', border: '#cbd5e1', Icon: Clock },
-                                'Sudah Dicuci': { color: '#b45309', bg: '#fef3c7', border: '#fcd34d', Icon: Droplets },
-                                'Ready Anter': { color: '#15803d', bg: '#dcfce7', border: '#86efac', Icon: CheckCircle },
-                            }[status];
+                        {statusFlow.map(status => {
+                            const cfg = STATUS_PICKER_CFG[status];
                             const isActive = order.status === status;
                             return (
                                 <button
@@ -484,6 +625,33 @@ const S = {
     custPhone: {
         fontSize: 11,
         color: '#94a3b8',
+    },
+    deliveryTag: {
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 3,
+        fontSize: 9,
+        fontWeight: 700,
+        color: '#64748b',
+        background: '#f1f5f9',
+        padding: '2px 7px',
+        borderRadius: 5,
+        marginTop: 4,
+        textTransform: 'uppercase',
+        letterSpacing: '0.3px',
+    },
+    deliverAlert: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        fontSize: 11,
+        fontWeight: 700,
+        color: '#1d4ed8',
+        background: '#eff6ff',
+        border: '1px solid #93c5fd',
+        borderRadius: 8,
+        padding: '7px 10px',
+        marginBottom: 10,
     },
     statusBadge: {
         display: 'flex',

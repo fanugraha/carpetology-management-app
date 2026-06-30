@@ -101,7 +101,7 @@ export default function JadwalHomeVisit() {
                     </button>
                     <div style={S.headerTitle}>
                         <div style={S.headerLabel}>Jadwal Home Visit</div>
-                        <div style={S.headerSub}>Carpetology</div>
+                        <div style={S.headerSub}>Carpetology ID</div>
                     </div>
                     <button onClick={goToday} style={S.todayBtn} title="Ke hari ini">
                         <Calendar size={15} color="#04CDCD" />
@@ -217,7 +217,7 @@ export default function JadwalHomeVisit() {
                 {/* Footer */}
                 <div style={S.footer}>
                     <Layers size={12} color="#cbd5e1" />
-                    <span>Carpetology Home Visit</span>
+                    <span>Carpetology ID Home Visit</span>
                 </div>
             </div>
 

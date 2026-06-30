@@ -262,7 +262,7 @@ export default function CustomerPage() {
                         </div>
                         <div>
                             <div style={S.brand}>Data Pelanggan</div>
-                            <div style={S.tagline}>Carpetology — Manajemen Pelanggan</div>
+                            <div style={S.tagline}>Carpetology ID — Manajemen Pelanggan</div>
                         </div>
                     </div>
                 </div>
@@ -342,7 +342,7 @@ export default function CustomerPage() {
 
                 {/* Footer */}
                 <div style={S.footer}>
-                    <div style={{ fontWeight: 700, color: '#04CDCD', marginBottom: 4 }}>Carpetology</div>
+                    <div style={{ fontWeight: 700, color: '#04CDCD', marginBottom: 4 }}>Carpetology ID</div>
                     <div style={{ fontSize: 11, color: '#94a3b8' }}>Jasa Cuci Karpet & Laundry Professional</div>
                 </div>
             </div>

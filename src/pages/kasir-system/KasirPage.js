@@ -1,53 +1,3 @@
-/**
- * KasirPage — v5
- *
- * Semua perubahan dari v4:
- * ─────────────────────────────────────────────────────────────────
- * [BUG FIX 🔴] KalkulatorPxL useEffect dependency
- *   - Tambah `onLuasChange` ke dependency array → pakai useCallback di Step1
- *   - Cegah stale closure saat onLuasChange berubah referensi
- *
- * [BUG FIX 🔴] lastCustomer stale closure di useEffect orders
- *   - Ganti cek `!lastCustomer` dengan useRef (lastCustomerSet)
- *   - Dependency array tidak lagi menyebabkan infinite loop
- *
- * [BUG FIX 🔴] Mobile auto-zoom pada input number
- *   - CSS .inp, .pxl-inp, semua input number → font-size: 16px
- *   - Tambah `touch-action: manipulation` dan viewport meta via CSS
- *
- * [BUG FIX 🟡] KalkulatorPxL reset saat cart berubah
- *   - State panjang/lebar dipindah ke cart item (cartDims[cartKey])
- *   - KalkulatorPxL terima initialPanjang/initialLebar sebagai prop
- *   - Komponen tidak di-unmount saat cart entry lain berubah
- *
- * [BUG FIX 🟡] Workshop statusBayar selalu "Lunas"
- *   - QRIS & Transfer → "Menunggu Konfirmasi" (bukan langsung Lunas)
- *   - Tunai → "Lunas"
- *   - Belum Bayar → "Belum Lunas"
- *   - Badge di success page merefleksikan status baru
- *
- * [UX 🟡] Konfirmasi Tandai Lunas diganti modal (bukan window.confirm)
- *   - Modal sheet dengan preview nota ID + nama customer
- *   - Spinner saat proses update
- *   - window.confirm dihapus seluruhnya
- *
- * [UX 🟢] Feedback loading tandai Lunas
- *   - Tombol "Tandai Lunas" → spinner "Memproses..." selama update
- *   - lunasLoading tracking per notaId sudah ada di v4, diperkuat
- *
- * [UX 🟢] Cart persist via sessionStorage
- *   - cart, customer, svcType, step disimpan ke sessionStorage
- *   - Restore otomatis saat halaman reload/refresh
- *   - Di-clear saat transaksi selesai (handleReset)
- *
- * [UX 🟢] Label pay-chip dipersingkat
- *   - "Belum Bayar" → label: "Tempo", sub: "Hutang"
- *   - Tidak terpotong di mobile 4-kolom
- *
- * [SKIP] Dark mode — user minta skip
- * [SKIP] Shortcut deposit chips — user minta skip
- */
-
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   collection, getDocs, addDoc, doc, serverTimestamp,
@@ -59,7 +9,7 @@ import {
   ChevronRight, Phone, Printer, Edit3, Copy, MessageCircle,
   Layers, Banknote, QrCode, Building2, Home,
   Loader2, Eye, Download, ArrowLeft, Star,
-  AlertTriangle, Tag, Save,
+  AlertTriangle, Tag, Save, Store, Truck,
 } from "lucide-react";
 import { db } from "../../firebase";
 import Navbar from "../../componets/Navbar";
@@ -365,6 +315,7 @@ function inferKat(nama = "") {
   if (n.includes("sofa")) return "Sofa";
   if (n.includes("springbed") || n.includes("kasur")) return "Springbed";
   if (n.includes("karpet") || n.includes("gorden")) return "Karpet";
+  if (n.includes("sepatu")) return "Sepatu";   // ← tambahan
   return "Lainnya";
 }
 
@@ -593,6 +544,7 @@ function KalkulatorPxL({ harga, onLuasChange, autoFocus, initialPanjang = "", in
 function Step1({
   products, loadingProducts, customers, loadingCustomers,
   cart, setCart, customer, setCustomer, svcType, setSvcType,
+  deliveryType, setDeliveryType,
   onAddCustomer, lastCustomer, onNext,
 }) {
   const [search, setSearch] = useState("");
@@ -659,16 +611,16 @@ function Step1({
   );
 
   const handleAddCust = async () => {
-  if (!newCust.nama.trim() || !newCust.hp.trim()) return;
-  setSaving(true);
-  try {
-    const cust = await onAddCustomer(newCust);
-    setCustomer(cust);
-    setCustMode(false);
-    setCustSearch("");
-    setNewCust({ nama: "", hp: "" });
-  } finally { setSaving(false); }
-};
+    if (!newCust.nama.trim() || !newCust.hp.trim()) return;
+    setSaving(true);
+    try {
+      const cust = await onAddCustomer(newCust);
+      setCustomer(cust);
+      setCustMode(false);
+      setCustSearch("");
+      setNewCust({ nama: "", hp: "" });
+    } finally { setSaving(false); }
+  };
 
   const prodIdsInCart = new Set(cart.map(c => c.produkId));
 
@@ -692,6 +644,32 @@ function Step1({
             </div>
           ))}
         </div>
+
+        {/* Metode Pengambilan — hanya workshop */}
+        {svcType === "workshop" && (
+          <div style={{ marginBottom: 12 }}>
+            <div className="sec">Metode Pengambilan</div>
+            <div className="svc-toggle">
+              {[
+                { val: "ambil_sendiri", Icon: Store, label: "Ambil Sendiri", sub: "Customer ambil ke toko" },
+                { val: "antar_jemput", Icon: Truck, label: "Antar Jemput", sub: "Kami antar ke customer" },
+              ].map(opt => (
+                <div
+                  key={opt.val}
+                  className={`svc-opt ws ${deliveryType === opt.val ? "active" : ""}`}
+                  onClick={() => setDeliveryType(opt.val)}
+                >
+                  {deliveryType === opt.val && (
+                    <div className="svc-check"><CheckCircle size={10} color="white" strokeWidth={3} /></div>
+                  )}
+                  <opt.Icon size={22} color={deliveryType === opt.val ? C.primary : C.muted} />
+                  <div className="svc-name">{opt.label}</div>
+                  <div className="svc-sub">{opt.sub}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Customer */}
         <div className="sec">Customer</div>
@@ -794,7 +772,7 @@ function Step1({
           background: C.white, paddingTop: 4, paddingBottom: 4,
           marginLeft: -16, marginRight: -16, paddingLeft: 16, paddingRight: 16,
         }}>
-          <SearchInput value={search} onChange={setSearch} placeholder="Cari produk..." />
+          <SearchInput value={search} onChange={setSearch} placeholder="Cari layanan..." />
           <div className="chips">
             {kategori.map(k => (
               <div key={k} className={`chip ${kat === k ? "active" : ""}`} onClick={() => setKat(k)}>{k}</div>
@@ -803,7 +781,7 @@ function Step1({
         </div>
 
         <div className="sec" style={{ marginTop: 6 }}>
-          Pilih Produk
+          Pilih Layanan
           <span style={{ fontSize: 9, color: C.ok, display: "flex", alignItems: "center", gap: 3, fontWeight: 700, textTransform: "none", letterSpacing: 0 }}>
             <div style={{ width: 5, height: 5, borderRadius: "50%", background: C.ok }} /> Live
           </span>
@@ -871,9 +849,9 @@ function Step1({
         )}
 
         {loadingProducts ? (
-          <div className="loading"><Loader2 size={20} className="spin" color={C.primary} /> Memuat produk...</div>
+          <div className="loading"><Loader2 size={20} className="spin" color={C.primary} /> Memuat layanan...</div>
         ) : filtered.length === 0 ? (
-          <div className="empty"><div className="empty-icon"><Search size={36} color={C.border} /></div>Produk tidak ditemukan</div>
+          <div className="empty"><div className="empty-icon"><Search size={36} color={C.border} /></div>Layanan tidak ditemukan</div>
         ) : (
           <div className="prod-grid">
             {filtered.map(prod => {
@@ -1154,7 +1132,7 @@ function Step2({ cart, customer, svcType, onBack, onSave, saving }) {
           <button className="btn btn-p" style={{ flex: 1 }} disabled={!canSave || saving} onClick={handleSave}>
             {saving
               ? <><Loader2 size={14} className="spin" /> Menyimpan...</>
-              : <><CheckCircle size={14} /> Simpan · {rp(totalHarga)}</>
+              : <><CheckCircle size={14} /> Simpan Tagihan </>
             }
           </button>
         </div>
@@ -1193,7 +1171,7 @@ function StepSukses({ order, onReset, onViewNota }) {
     const statusLine = order.statusBayar === "Menunggu Konfirmasi"
       ? `Status: Menunggu Konfirmasi Pembayaran\n`
       : "";
-    return `Halo ${order.customerNama}, terima kasih sudah mempercayakan ke *Carpetology*!\n\n` +
+    return `Halo ${order.customerNama}, terima kasih sudah mempercayakan ke *Carpetology ID*!\n\n` +
       `${itemLines}\n${diskonLine}Total Tagihan: *${rp(totalTagihan)}*\n${depositLine}${statusLine}Metode: ${order.metode}\n\nNota: ${notaUrl}`;
   };
 
@@ -1225,7 +1203,7 @@ function StepSukses({ order, onReset, onViewNota }) {
 
       <div className="nota-card" style={{ marginBottom: 14 }}>
         <div className="nota-hdr">
-          <div className="nota-brand"><Layers size={16} /> Carpetology</div>
+          <div className="nota-brand"><Layers size={16} /> Carpetology ID</div>
           <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>{order.notaId}</div>
         </div>
         <div style={{ padding: "14px 16px" }}>
@@ -1673,6 +1651,136 @@ function RiwayatPage({ orders, loadingOrders, onViewNota, isAdmin, hasMore, onLo
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(""), 2500); };
 
+  // ── Langkah 1: Agregasi Ringkasan ──
+  const buildRingkasan = (data) => {
+    const omzetKotor = data.reduce((s, o) => s + (o.subtotal || o.total), 0);
+    const totalDiskon = data.reduce((s, o) => s + (o.diskon?.amount || 0), 0);
+    const pendapatanBersih = omzetKotor - totalDiskon;
+    const jumlahTransaksi = data.length;
+    const avgOrderValue = jumlahTransaksi > 0 ? pendapatanBersih / jumlahTransaksi : 0;
+    const piutang = data.filter(o => !isStatusLunas(o.statusBayar)).reduce((s, o) => s + o.total, 0);
+    const persenPiutang = pendapatanBersih > 0 ? (piutang / pendapatanBersih) * 100 : 0;
+    const depositOutstanding = data
+      .filter(o => o.layananType === "homeservice" && o.dp?.sisa > 0)
+      .reduce((s, o) => s + o.dp.sisa, 0);
+
+    return [
+      { Keterangan: "Total Omzet Kotor", Nilai: omzetKotor },
+      { Keterangan: "Total Diskon", Nilai: totalDiskon },
+      { Keterangan: "Pendapatan Bersih", Nilai: pendapatanBersih },
+      { Keterangan: "Jumlah Transaksi", Nilai: jumlahTransaksi },
+      { Keterangan: "Rata-rata Nilai Transaksi (AOV)", Nilai: Math.round(avgOrderValue) },
+      { Keterangan: "Total Piutang Belum Tertagih", Nilai: piutang },
+      { Keterangan: "Persentase Piutang thd Pendapatan (%)", Nilai: Number(persenPiutang.toFixed(1)) },
+      { Keterangan: "Total Deposit Home Service Outstanding", Nilai: depositOutstanding },
+    ];
+  };
+
+  // ── Langkah 2: Komposisi ──
+  const buildKomposisi = (data) => {
+    const total = data.reduce((s, o) => s + o.total, 0);
+
+    const groupBy = (keyFn, rows) => {
+      const map = {};
+      rows.forEach(o => {
+        const key = keyFn(o);
+        if (!map[key]) map[key] = { jumlah: 0, nominal: 0 };
+        map[key].jumlah += 1;
+        map[key].nominal += r2(o.total);
+      });
+      return Object.entries(map).map(([k, v]) => ({
+        Kategori: k,
+        "Jumlah Transaksi": v.jumlah,
+        Nominal: r2(v.nominal),
+        "Persentase (%)": total > 0 ? Number(((v.nominal / total) * 100).toFixed(1)) : 0,
+      }));
+    };
+
+    const normalizeMetode = (m) => {
+      const v = (m || "").trim().toLowerCase();
+      if (v === "belum payment" || v === "belum bayar") return "Belum Bayar";
+      if (v === "qris") return "QRIS";
+      if (v === "tunai") return "Tunai";
+      if (v === "transfer") return "Transfer";
+      return m || "-";
+    };
+
+    const metode = groupBy(o => normalizeMetode(o.metode), data);
+    const layanan = groupBy(o => o.layananType === "homeservice" ? "Home Service" : "Workshop", data);
+    const status = groupBy(o => o.statusBayar || "-", data);
+
+    // Gabungkan jadi satu sheet dengan label section
+    const rows = [];
+    rows.push({ Kategori: "── PER METODE PEMBAYARAN ──", "Jumlah Transaksi": "", Nominal: "", "Persentase (%)": "" });
+    rows.push(...metode);
+    rows.push({});
+    rows.push({ Kategori: "── PER TIPE LAYANAN ──", "Jumlah Transaksi": "", Nominal: "", "Persentase (%)": "" });
+    rows.push(...layanan);
+    rows.push({});
+    rows.push({ Kategori: "── PER STATUS PEMBAYARAN ──", "Jumlah Transaksi": "", Nominal: "", "Persentase (%)": "" });
+    rows.push(...status);
+
+    return rows;
+  };
+
+  // ── Langkah 3: Produk Terlaris ──
+  const buildProdukTerlaris = (data) => {
+    const map = {};
+    data.forEach(o => {
+      (o.items || []).forEach(it => {
+        const kategori = inferKat(it.nama || "");
+        if (!map[kategori]) {
+          map[kategori] = { totalMeter: 0, totalPcs: 0, totalOmzet: 0 };
+        }
+        if (it.satuan === "meter") {
+          map[kategori].totalMeter += Number(it.luas || 0);
+        } else {
+          map[kategori].totalPcs += Number(it.qty || 1);
+        }
+        map[kategori].totalOmzet += r2(Number(it.subtotal || 0));
+      });
+    });
+
+    const totalOmzetKeseluruhan = Object.values(map).reduce((s, p) => s + p.totalOmzet, 0);
+
+    return Object.entries(map)
+      .sort((a, b) => b[1].totalOmzet - a[1].totalOmzet)
+      .map(([kategori, v]) => ({
+        "Kategori Produk": kategori,
+        "Total m²": v.totalMeter > 0 ? Number(v.totalMeter.toFixed(2)) : "-",
+        "Total Pcs": v.totalPcs > 0 ? v.totalPcs : "-",
+"Total Omzet": r2(v.totalOmzet),
+        "Kontribusi (%)": totalOmzetKeseluruhan > 0
+          ? Number(((v.totalOmzet / totalOmzetKeseluruhan) * 100).toFixed(1))
+          : 0,
+      }));
+  };
+
+  const RINGKASAN_RUPIAH_ROWS = [0, 1, 2, 4, 5, 7];
+
+  const applyCurrencyToRows = (ws, rowIndexes, col) => {
+    const fmt = '"Rp" #,##0';
+    rowIndexes.forEach(r => {
+      const cellRef = XLSX.utils.encode_cell({ r: r + 1, c: col });
+      if (ws[cellRef]) ws[cellRef].z = fmt;
+    });
+  };
+
+  const applyCurrencyFormat = (ws, colIndexes, rowCount) => {
+    const fmt = '"Rp" #,##0';
+    colIndexes.forEach(col => {
+      for (let r = 1; r <= rowCount; r++) {
+        const cellRef = XLSX.utils.encode_cell({ r, c: col });
+        if (ws[cellRef] && typeof ws[cellRef].v === "number") {
+          ws[cellRef].z = fmt;
+        }
+      }
+    });
+  };
+
+  const r2 = (n) => Math.round(Number(n) || 0);
+
+  // ── Langkah 4-6: handleExport baru ──
   const handleExport = () => {
     let data = orders;
     if (exportMode === "bulan") {
@@ -1691,32 +1799,58 @@ function RiwayatPage({ orders, loadingOrders, onViewNota, isAdmin, hasMore, onLo
       });
     }
 
-    const rows = data.map(o => ({
+    const wb = XLSX.utils.book_new();
+
+    // Sheet 1 — Ringkasan Eksekutif
+    const ringkasanRows = buildRingkasan(data);
+    const wsRingkasan = XLSX.utils.json_to_sheet(ringkasanRows, { header: ["Keterangan", "Nilai"] });
+    wsRingkasan["!cols"] = [{ wch: 38 }, { wch: 20 }];
+    applyCurrencyToRows(wsRingkasan, RINGKASAN_RUPIAH_ROWS, 1);
+    XLSX.utils.book_append_sheet(wb, wsRingkasan, "Ringkasan");
+
+    // Sheet 2 — Komposisi Pendapatan
+    const komposisiRows = buildKomposisi(data);
+    const wsKomposisi = XLSX.utils.json_to_sheet(komposisiRows, {
+      header: ["Kategori", "Jumlah Transaksi", "Nominal", "Persentase (%)"],
+    });
+    wsKomposisi["!cols"] = [{ wch: 26 }, { wch: 16 }, { wch: 16 }, { wch: 16 }];
+    applyCurrencyFormat(wsKomposisi, [2], komposisiRows.length);   // ← tambahan
+    XLSX.utils.book_append_sheet(wb, wsKomposisi, "Komposisi");
+
+    // Sheet 3 — Produk Terlaris
+    const produkRows = buildProdukTerlaris(data);
+    const wsProduk = XLSX.utils.json_to_sheet(produkRows);
+    wsProduk["!cols"] = [{ wch: 22 }, { wch: 12 }, { wch: 12 }, { wch: 16 }, { wch: 14 }];
+    applyCurrencyFormat(wsProduk, [3], produkRows.length);   // ← tambahan
+    XLSX.utils.book_append_sheet(wb, wsProduk, "Produk Terlaris");
+
+    // Sheet 4 — Detail Transaksi (struktur lama, tidak berubah)
+    const detailRows = data.map(o => ({
       "Nota ID": o.notaId,
       "Tanggal": fmtDate(o.timestamp || o.tanggal),
       "Customer": o.customerNama,
       "No HP": o.customerHp,
       "Layanan": o.layananType === "homeservice" ? "Home Service" : "Workshop",
       "Item": (o.items || []).map(it => `${it.qty || 1}× ${it.nama}`).join(", "),
-      "Subtotal": o.subtotal || o.total,
-      "Diskon": o.diskon?.amount || 0,
-      "Deposit": o.dp?.nominal || 0,
-      "Total Tagihan": o.total,
-      "Sisa Bayar": o.total - (o.dp?.nominal || 0),
+      "Subtotal": r2(o.subtotal || o.total),
+      "Diskon": r2(o.diskon?.amount || 0),
+      "Deposit": r2(o.dp?.nominal || 0),
+      "Total Tagihan": r2(o.total),
+      "Sisa Bayar": r2(o.total - (o.dp?.nominal || 0)),
       "Metode": o.metode,
       "Status": o.statusBayar,
       "Catatan": o.catatan || "",
     }));
-
-    const ws = XLSX.utils.json_to_sheet(rows);
-    ws["!cols"] = [
+    const wsDetail = XLSX.utils.json_to_sheet(detailRows);
+    wsDetail["!cols"] = [
       { wch: 16 }, { wch: 14 }, { wch: 20 }, { wch: 14 }, { wch: 12 }, { wch: 35 },
       { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 20 }
     ];
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Transaksi");
+    applyCurrencyFormat(wsDetail, [6, 7, 8, 9, 10], detailRows.length);
+    XLSX.utils.book_append_sheet(wb, wsDetail, "Detail Transaksi");
+
     const label = exportMode === "bulan" ? exportBulan : `${exportFrom}_${exportTo}`;
-    XLSX.writeFile(wb, `Carpetology_${label}.xlsx`);
+    XLSX.writeFile(wb, `Carpetology_Laporan_${label}.xlsx`);
     setShowExport(false);
   };
 
@@ -1873,7 +2007,7 @@ function RiwayatPage({ orders, loadingOrders, onViewNota, isAdmin, hasMore, onLo
           <div className="modal-sheet" onClick={e => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
               <div style={{ fontSize: 14, fontWeight: 800, color: C.dark, display: "flex", alignItems: "center", gap: 6 }}>
-                <Download size={15} color={C.primary} /> Export Excel
+                <Download size={15} color={C.primary} /> Export Laporan Keuangan
               </div>
               <button onClick={() => setShowExport(false)} style={{ background: "none", border: "none", cursor: "pointer", color: C.muted }}><X size={18} /></button>
             </div>
@@ -1898,16 +2032,37 @@ function RiwayatPage({ orders, loadingOrders, onViewNota, isAdmin, hasMore, onLo
                 <input type="date" value={exportTo} onChange={e => setExportTo(e.target.value)} className="inp" style={{ marginBottom: 16 }} />
               </>
             )}
-            <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px 12px", marginBottom: 14, fontSize: 12, color: C.muted, display: "flex", justifyContent: "space-between" }}>
-              <span>Estimasi data</span>
-              <span style={{ fontWeight: 700, color: C.dark }}>
-                {(() => {
-                  if (exportMode === "bulan") return orders.filter(o => { const d = o.timestamp?.toDate ? o.timestamp.toDate() : new Date(o.tanggal || 0); return d.toISOString().slice(0, 7) === exportBulan; }).length;
-                  const from = exportFrom ? new Date(exportFrom) : null;
-                  const to = exportTo ? new Date(exportTo + "T23:59:59") : null;
-                  return orders.filter(o => { const d = o.timestamp?.toDate ? o.timestamp.toDate() : new Date(o.tanggal || 0); if (from && d < from) return false; if (to && d > to) return false; return true; }).length;
-                })()} transaksi
-              </span>
+            <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px 12px", marginBottom: 14, fontSize: 12, color: C.muted }}>
+              {(() => {
+                const previewData = exportMode === "bulan"
+                  ? orders.filter(o => {
+                    const d = o.timestamp?.toDate ? o.timestamp.toDate() : new Date(o.tanggal || 0);
+                    return d.toISOString().slice(0, 7) === exportBulan;
+                  })
+                  : (() => {
+                    const from = exportFrom ? new Date(exportFrom) : null;
+                    const to = exportTo ? new Date(exportTo + "T23:59:59") : null;
+                    return orders.filter(o => {
+                      const d = o.timestamp?.toDate ? o.timestamp.toDate() : new Date(o.tanggal || 0);
+                      if (from && d < from) return false;
+                      if (to && d > to) return false;
+                      return true;
+                    });
+                  })();
+                const omzetPreview = previewData.reduce((s, o) => s + o.total, 0);
+                return (
+                  <>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                      <span>Jumlah transaksi</span>
+                      <span style={{ fontWeight: 700, color: C.dark }}>{previewData.length}</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span>Total omzet periode ini</span>
+                      <span style={{ fontWeight: 700, color: C.p700 }}>{rp(omzetPreview)}</span>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
             <button className="btn btn-p btn-full" onClick={handleExport} disabled={exportMode === "range" && (!exportFrom || !exportTo)}>
               <Download size={14} /> Download Excel
@@ -2065,7 +2220,7 @@ function NotaPage({ notaId, onBack }) {
     <div className="ani pad">
       <div style={{ background: C.dark, borderRadius: 12, padding: "16px", textAlign: "center", marginBottom: 14 }}>
         <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 18, fontWeight: 700, color: C.primary, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-          <Layers size={16} /> Carpetology
+          <Layers size={16} /> Carpetology ID
         </div>
         <div style={{ fontSize: 10, color: C.muted, marginTop: 3 }}>{order.notaId}</div>
       </div>
@@ -2149,7 +2304,7 @@ function NotaPage({ notaId, onBack }) {
 
       <div style={{ textAlign: "center", marginTop: 20, paddingTop: 14, borderTop: `1px dashed ${C.border}` }}>
         <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 12, fontWeight: 700, color: C.primary, display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
-          <Layers size={12} /> Carpetology
+          <Layers size={12} /> Carpetology ID
         </div>
         <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>Terima kasih atas kepercayaan Anda</div>
       </div>
@@ -2171,6 +2326,7 @@ export default function App() {
   const [cart, setCart] = useState(savedSession?.cart ?? []);
   const [customer, setCustomer] = useState(savedSession?.customer ?? null);
   const [svcType, setSvcType] = useState(savedSession?.svcType ?? "workshop");
+  const [deliveryType, setDeliveryType] = useState(savedSession?.deliveryType ?? "ambil_sendiri");
   const [currentOrder, setCurrentOrder] = useState(null);
   const [saving, setSaving] = useState(false);
   const [notaView, setNotaView] = useState(null);
@@ -2192,7 +2348,7 @@ export default function App() {
   useEffect(() => {
     // Jangan simpan kalau sudah di step sukses (step 2)
     if (step < 2) {
-      saveSession({ cart, customer, svcType, step });
+      saveSession({ cart, customer, svcType, step, deliveryType });
     }
   }, [cart, customer, svcType, step]);
 
@@ -2313,6 +2469,7 @@ export default function App() {
         status_order: isHS ? "Home Service" : "Waiting List",
         statusBayar,
         layanan_type: svcType,
+        delivery_type: svcType === "workshop" ? deliveryType : "ambil_sendiri",
         dp: dpPayload,
         total_harga: totalHarga,
         created_at: serverTimestamp(),
@@ -2351,9 +2508,14 @@ export default function App() {
   };
 
   const handleReset = () => {
-    clearSession(); // [FIX 🟢] Bersihkan session
-    setStep(0); setCart([]); setCustomer(null); setSvcType("workshop");
-    setCurrentOrder(null); setNotaView(null); setTab("kasir");
+    clearSession();
+    setStep(0); setCart([]);
+    setCustomer(null);
+    setSvcType("workshop");
+    setDeliveryType("ambil_sendiri");
+    setCurrentOrder(null);
+    setNotaView(null);
+    setTab("kasir");
   };
 
   return (
@@ -2361,7 +2523,7 @@ export default function App() {
       <div className="topbar">
         <div className="tb-icon"><Layers size={17} strokeWidth={2} /></div>
         <div style={{ flex: 1 }}>
-          <div className="tb-brand">Carpetology</div>
+          <div className="tb-brand">Carpetology ID</div>
           <div className="tb-sub">Sistem Kasir</div>
         </div>
         <div style={{ textAlign: "right", fontSize: 11, color: C.primary, fontWeight: 600 }}>{todayLabel()}</div>
@@ -2403,7 +2565,7 @@ export default function App() {
                       <div className={`sdot ${step > 0 ? "done" : "active"}`}>
                         {step > 0 ? <CheckCircle size={12} /> : "1"}
                       </div>
-                      <div className="slbl">Produk & Customer</div>
+                      <div className="slbl">Layanan & Customer</div>
                     </div>
                     <div className={`sline ${step > 0 ? "done" : ""}`} style={{ flex: 1, margin: "0 6px" }} />
                   </div>
@@ -2416,12 +2578,19 @@ export default function App() {
 
               {step === 0 && (
                 <Step1
-                  products={products} loadingProducts={loadingProducts}
-                  customers={customers} loadingCustomers={loadingCustomers}
-                  cart={cart} setCart={setCart}
-                  customer={customer} setCustomer={setCustomer}
-                  svcType={svcType} setSvcType={setSvcType}
+                  products={products}
+                  loadingProducts={loadingProducts}
+                  customers={customers}
+                  loadingCustomers={loadingCustomers}
+                  cart={cart}
+                  setCart={setCart}
+                  customer={customer}
+                  setCustomer={setCustomer}
+                  svcType={svcType}
+                  setSvcType={setSvcType}
                   onAddCustomer={handleAddCustomer}
+                  deliveryType={deliveryType}
+                  setDeliveryType={setDeliveryType}
                   lastCustomer={lastCustomer}
                   onNext={() => setStep(1)}
                 />

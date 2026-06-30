@@ -66,9 +66,14 @@ export default function JadwalPickup() {
     useEffect(() => { if (!canAccess) navigate('/'); }, [canAccess, navigate]);
 
     // ── Realtime listener — koleksi tunggal "pickups" dengan field tipe ──
+    // Item dengan status 'Dibatalkan' (hasil auto-cancel dari OrderList) disaring di sini
+    // supaya tidak tampil di mana pun di halaman ini.
     useEffect(() => {
         const unsub = onSnapshot(query(collection(db, 'pickups')), snap => {
-            setAllItems(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+            const items = snap.docs
+                .map(d => ({ id: d.id, ...d.data() }))
+                .filter(p => p.status !== 'Dibatalkan');
+            setAllItems(items);
             setLoading(false);
         });
         return unsub;
@@ -457,9 +462,22 @@ export default function JadwalPickup() {
                                 canEdit={canEdit}
                                 tipe={activeTab}
                                 onToggle={async () => {
+                                    const menjadiSelesai = p.status !== statusSelesai;
                                     await updateDoc(doc(db, 'pickups', p.id), {
-                                        status: p.status === statusSelesai ? 'Dijadwalkan' : statusSelesai,
+                                        status: menjadiSelesai ? statusSelesai : 'Dijadwalkan',
                                     });
+                                    // ── Sinkron balik ke transactions kalau delivery ini berasal dari order ──
+                                    if (p.tipe === 'delivery' && menjadiSelesai && p.order_id) {
+                                        try {
+                                            await updateDoc(doc(db, 'transactions', p.order_id), {
+                                                status_order: 'Sudah Diantar',
+                                                status: 'Sudah Diantar',
+                                                ready_at: new Date(),
+                                            });
+                                        } catch (err) {
+                                            console.error('Gagal sinkron status ke order:', err);
+                                        }
+                                    }
                                 }}
                                 onDetail={() => setDetailItem(p)} />
                         ))}
@@ -512,9 +530,7 @@ export default function JadwalPickup() {
     );
 }
 
-// ─── ITEM CARD ──────────────────────────────────────────────────────────────
-// ─── ITEM CARD ──────────────────────────────────────────────────────────────
-// Ganti seluruh fungsi ItemCard di JadwalPickup.js dengan kode ini
+// ─── ITEM CARD ─────────────────────────────────────────────────────────────
 
 function ItemCard({ item, index, canEdit, tipe, onToggle, onDetail }) {
     const statusSelesai = tipe === 'pickup' ? 'Sudah Dijemput' : 'Sudah Diantar';
@@ -597,23 +613,22 @@ function ItemCard({ item, index, canEdit, tipe, onToggle, onDetail }) {
                     </button>
                 ) : (
                     <div
-        onClick={(e) => { e.stopPropagation(); handleToggle(e); }}
-        style={{
-            ...S.checkBtn,
-            background: localStatus ? '#22c55e' : '#f8fafc',
-            border: localStatus ? '2px solid #86efac' : '2px dashed #cbd5e1',
-            animation: popped ? 'pop .4s ease' : localStatus ? 'pulse 1.2s ease' : 'none',
-            cursor: busy ? 'not-allowed' : 'pointer',
-            flexShrink: 0,
-        }}
-    >
-        {localStatus
-            ? <CheckCircle2 size={17} color="#fff" />
-            : <span style={{ fontSize: 12, fontWeight: 800, color: '#94a3b8' }}>{index}</span>
-        }
-    </div>
+                        onClick={(e) => { e.stopPropagation(); handleToggle(e); }}
+                        style={{
+                            ...S.checkBtn,
+                            background: localStatus ? '#22c55e' : '#f8fafc',
+                            border: localStatus ? '2px solid #86efac' : '2px dashed #cbd5e1',
+                            animation: popped ? 'pop .4s ease' : localStatus ? 'pulse 1.2s ease' : 'none',
+                            cursor: busy ? 'not-allowed' : 'pointer',
+                            flexShrink: 0,
+                        }}
+                    >
+                        {localStatus
+                            ? <CheckCircle2 size={17} color="#fff" />
+                            : <span style={{ fontSize: 12, fontWeight: 800, color: '#94a3b8' }}>{index}</span>
+                        }
+                    </div>
                 )}
-
                 {/* Info */}
                 <div
                     style={{
@@ -862,9 +877,24 @@ function DetailItemModal({ item, onClose, canEdit }) {
     const handleToggleStatus = async () => {
         setUpdating(true);
         try {
+            const menjadiSelesai = !isDone;
             await updateDoc(doc(db, 'pickups', item.id), {
-                status: isDone ? 'Dijadwalkan' : statusSelesai,
+                status: menjadiSelesai ? statusSelesai : 'Dijadwalkan',
             });
+
+            // ── Sinkron balik ke transactions kalau delivery ini berasal dari order ──
+            if (!isPickup && menjadiSelesai && item.order_id) {
+                try {
+                    await updateDoc(doc(db, 'transactions', item.order_id), {
+                        status_order: 'Sudah Diantar',
+                        status: 'Sudah Diantar',
+                        ready_at: new Date(),
+                    });
+                } catch (err) {
+                    console.error('Gagal sinkron status ke order:', err);
+                }
+            }
+
             onClose();
         } catch { setUpdating(false); }
     };

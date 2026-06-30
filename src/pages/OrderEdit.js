@@ -1,12 +1,83 @@
 import React, { useState } from 'react';
 import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
-import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import {
+    doc, updateDoc, serverTimestamp,
+    collection, addDoc, query, where, getDocs,
+} from 'firebase/firestore';
 import {
     ArrowLeft, User, Package, CreditCard, Banknote,
     QrCode, Building2, Clock, WashingMachine, CheckCircle,
-    FileText, Save, Ruler, AlertTriangle, Loader2,
+    FileText, Save, Ruler, AlertTriangle, Loader2, Truck
 } from 'lucide-react';
+
+/* ─────────────────────────────────────────────
+   AUTO-JADWAL DELIVERY (sama persis seperti di OrderRow.jsx)
+   Disalin agar konsisten — kalau status diubah lewat halaman Edit
+   ini, behaviour-nya harus identik dengan quick-update di Order List.
+───────────────────────────────────────────── */
+function toDateKey(d) {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function getNextDeliveryDateKey(from = new Date()) {
+    const day = from.getDay(); // 0=Min ... 6=Sab
+    const d = new Date(from);
+    if (day === 2 || day === 4) {
+        // Selasa / Kamis: hari itu juga
+    } else if (day === 6) {
+        // Sabtu: lompat ke Selasa minggu depan
+        d.setDate(d.getDate() + 3);
+    } else {
+        const diffMap = { 1: 1, 3: 1, 5: 1, 0: 2 };
+        d.setDate(d.getDate() + diffMap[day]);
+    }
+    return toDateKey(d);
+}
+
+async function jadwalkanDeliveryOtomatis(order) {
+    try {
+        const q = query(
+            collection(db, 'pickups'),
+            where('order_id', '==', order.id),
+            where('tipe', '==', 'delivery'),
+        );
+        const snap = await getDocs(q);
+        const sudahAdaAktif = snap.docs.some(d => d.data().status !== 'Dibatalkan');
+        if (sudahAdaAktif) return;
+
+        await addDoc(collection(db, 'pickups'), {
+            nama: order.nama || '-',
+            no_hp: order.hp || '-',
+            alamat: '',
+            catatan: '',
+            tanggal: getNextDeliveryDateKey(new Date()),
+            tipe: 'delivery',
+            status: 'Dijadwalkan',
+            order_id: order.id,
+            created_at: serverTimestamp(),
+        });
+    } catch (err) {
+        console.error('Gagal jadwalkan delivery otomatis:', err);
+    }
+}
+
+async function batalkanJadwalDeliveryJikaPending(orderId) {
+    try {
+        const q = query(
+            collection(db, 'pickups'),
+            where('order_id', '==', orderId),
+            where('tipe', '==', 'delivery'),
+            where('status', '==', 'Dijadwalkan'),
+        );
+        const snap = await getDocs(q);
+        await Promise.all(
+            snap.docs.map(d => updateDoc(doc(db, 'pickups', d.id), { status: 'Dibatalkan' }))
+        );
+    } catch (err) {
+        console.error('Gagal batalkan jadwal delivery:', err);
+    }
+}
 
 function OrderEdit({ order, onBack, onSaveSuccess }) {
     const { user } = useAuth();
@@ -19,6 +90,8 @@ function OrderEdit({ order, onBack, onSaveSuccess }) {
     const [isLoading, setIsLoading] = useState(false);
     const [metode, setMetode] = useState(order?.metode_pembayaran || 'Belum Payment');
     const [catatan, setCatatan] = useState(order?.catatan || '');
+    const deliveryType = order?.delivery_type === 'antar_jemput' ? 'antar_jemput' : 'ambil_sendiri';
+
 
     const buildInitialItems = () => {
         if (order?.items && Array.isArray(order.items) && order.items.length > 0) {
@@ -76,7 +149,8 @@ function OrderEdit({ order, onBack, onSaveSuccess }) {
 
         try {
             setIsLoading(true);
-            const wasReady = (order?.status_order || order?.status) === 'Ready Anter';
+            const statusSebelumnya = order?.status_order || order?.status;
+            const wasReady = statusSebelumnya === 'Ready Anter';
             const isNowReady = statusOrder === 'Ready Anter';
             const readyAtPayload = isNowReady && !wasReady
                 ? { ready_at: serverTimestamp() }
@@ -115,6 +189,17 @@ function OrderEdit({ order, onBack, onSaveSuccess }) {
                 });
             }
 
+            // ── Integrasi otomatis ke jadwal delivery (khusus antar_jemput) ──
+            // Sama seperti di OrderRow.jsx, supaya update status lewat halaman
+            // Edit Order ini juga ikut memicu/membatalkan jadwal delivery.
+            if (deliveryType === 'antar_jemput' && statusSebelumnya !== statusOrder) {
+                if (statusOrder === 'Siap Diantar') {
+                    await jadwalkanDeliveryOtomatis({ id: order.id, nama: isAdmin ? toTitleCase(nama.trim()) : order.nama, hp: isAdmin ? hp.trim() : order.hp });
+                } else if (statusSebelumnya === 'Siap Diantar' && statusOrder !== 'Sudah Diantar') {
+                    await batalkanJadwalDeliveryJikaPending(order.id);
+                }
+            }
+
             alert('Data berhasil diperbarui!');
             if (typeof onSaveSuccess === 'function') onSaveSuccess();
         } catch (error) {
@@ -131,26 +216,19 @@ function OrderEdit({ order, onBack, onSaveSuccess }) {
         { id: 'Belum Payment', label: 'Belum Payment', icon: <Clock size={18} color="#d97706" /> },
     ];
 
-    const STATUS_OPTIONS = [
-        {
-            val: 'Waiting List',
-            icon: <Clock size={14} color="#94a3b8" />,
-            label: 'Waiting List',
-            desc: 'Order diterima, menunggu antrian',
-        },
-        {
-            val: 'Sudah Dicuci',
-            icon: <WashingMachine size={14} color="#f59e0b" />,
-            label: 'Sudah Dicuci',
-            desc: 'Proses cuci selesai',
-        },
-        {
-            val: 'Ready Anter',
-            icon: <CheckCircle size={14} color="#22c55e" />,
-            label: 'Ready Anter',
-            desc: 'Siap diantarkan ke customer',
-        },
-    ];
+
+    const STATUS_OPTIONS = deliveryType === 'antar_jemput'
+        ? [
+            { val: 'Waiting List', icon: <Clock size={14} color="#94a3b8" />, label: 'Waiting List', desc: 'Order diterima, menunggu antrian' },
+            { val: 'Sudah Dicuci', icon: <WashingMachine size={14} color="#f59e0b" />, label: 'Sudah Dicuci', desc: 'Proses cuci selesai' },
+            { val: 'Siap Diantar', icon: <Truck size={14} color="#1d4ed8" />, label: 'Siap Diantar', desc: 'Menunggu dijemput kurir' },
+            { val: 'Sudah Diantar', icon: <CheckCircle size={14} color="#22c55e" />, label: 'Sudah Diantar', desc: 'Sudah sampai ke customer' },
+        ]
+        : [
+            { val: 'Waiting List', icon: <Clock size={14} color="#94a3b8" />, label: 'Waiting List', desc: 'Order diterima, menunggu antrian' },
+            { val: 'Sudah Dicuci', icon: <WashingMachine size={14} color="#f59e0b" />, label: 'Sudah Dicuci', desc: 'Proses cuci selesai' },
+            { val: 'Siap Diambil', icon: <CheckCircle size={14} color="#22c55e" />, label: 'Siap Diambil', desc: 'Siap diambil customer ke toko' },
+        ];
 
     return (
         <div style={S.page}>

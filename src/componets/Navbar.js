@@ -43,7 +43,7 @@ const IconUsers = ({ size = 22, color = 'currentColor' }) => (
 
 const navItems = [
   { path: '/admin',           key: 'orders',    label: 'Orders',     Icon: IconHome         },
-  { path: '/admin/products',  key: 'produk',    label: 'Produk',     Icon: IconBox          },
+  { path: '/admin/products',  key: 'produk',    label: 'Layanan',     Icon: IconBox          },
   { path: '/admin/kasir',     key: 'kasir',     label: 'Kasir',      Icon: IconCashRegister },
   { path: '/admin/customers', key: 'customers', label: 'Pelanggan',  Icon: IconUsers        },
 ];

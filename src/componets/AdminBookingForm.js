@@ -3,9 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { db } from '../firebase';
 import { collection, addDoc, onSnapshot } from 'firebase/firestore';
 import {
-    ArrowLeft, User, Phone, MapPin, Sunrise, Sun,
+    User, Phone, MapPin, Sunrise, Sun,
     Check, Save, Loader2, CheckCircle, Layers,
-    FileText, CalendarDays, Clock,
+    CalendarDays, Clock, Home,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -28,11 +28,31 @@ const C = {
     dangerBg: '#fee2e2',
 };
 
+// ─── PHONE VALIDATION ─────────────────────────────────────────────────────────
+// Aturan: hanya angka (boleh diawali +62 / 62 / 0), dinormalisasi ke awalan 0,
+// lalu harus diawali "08" dengan total panjang 10–14 digit (pola umum nomor seluler ID).
+function isValidPhone(val) {
+    if (!val) return false;
+    const cleaned = val.trim().replace(/[\s-]/g, '');
+    if (!/^\+?\d+$/.test(cleaned)) return false;
+
+    let digits = cleaned;
+    if (digits.startsWith('+62')) {
+        digits = '0' + digits.slice(3);
+    } else if (digits.startsWith('62')) {
+        digits = '0' + digits.slice(2);
+    }
+
+    return /^08\d{8,12}$/.test(digits);
+}
+
 // ─── FIELD INPUT ──────────────────────────────────────────────────────────────
-function Field({ label, icon: Icon, type = 'text', value, onChange, ...rest }) {
+function Field({ label, icon: Icon, type = 'text', value, onChange, onBlur, error, errorMessage, required = true, ...rest }) {
     return (
         <div style={{ marginBottom: 14 }}>
-            <div style={S.fieldLabel}>{label}</div>
+            <div style={S.fieldLabel}>
+                {label} {required && <span style={{ color: C.danger }}>*</span>}
+            </div>
             <div style={{ position: 'relative' }}>
                 {Icon && (
                     <span style={S.fieldIconBox}>
@@ -43,27 +63,38 @@ function Field({ label, icon: Icon, type = 'text', value, onChange, ...rest }) {
                     type={type}
                     value={value}
                     onChange={onChange}
+                    onBlur={onBlur}
                     style={{
                         ...S.input,
                         paddingLeft: Icon ? 40 : 14,
+                        borderColor: error ? C.danger : C.border,
                     }}
                     {...rest}
                 />
             </div>
+            {error && <div style={S.errorText}>{errorMessage || 'Wajib diisi'}</div>}
         </div>
     );
 }
 
-function TextareaField({ label, value, onChange, rows = 3 }) {
+function TextareaField({ label, value, onChange, onBlur, rows = 3, error, errorMessage, placeholder, required = true }) {
     return (
         <div style={{ marginBottom: 14 }}>
-            <div style={S.fieldLabel}>{label}</div>
+            <div style={S.fieldLabel}>
+                {label} {required && <span style={{ color: C.danger }}>*</span>}
+            </div>
             <textarea
                 value={value}
                 onChange={onChange}
+                onBlur={onBlur}
                 rows={rows}
-                style={S.textarea}
+                placeholder={placeholder}
+                style={{
+                    ...S.textarea,
+                    borderColor: error ? C.danger : C.border,
+                }}
             />
+            {error && <div style={S.errorText}>{errorMessage || 'Wajib diisi'}</div>}
         </div>
     );
 }
@@ -117,16 +148,27 @@ function StepBar({ current }) {
 export default function AdminBookingForm() {
     const navigate = useNavigate();
     const [step, setStep] = useState(1);
-    const [form, setForm] = useState({ nama: '', no_hp: '', maps_lokasi: '', tanggal: '', sesi: '', keterangan: '' });
+    const [form, setForm] = useState({
+        nama: '',
+        no_hp: '',
+        alamat: '',
+        maps_lokasi: '',
+        tanggal: '',
+        sesi: '',
+        keterangan: '',
+    });
     const [loading, setLoading] = useState(false);
     const [saved, setSaved] = useState(false);
     const [existing, setExisting] = useState([]);
+    const [touched, setTouched] = useState({});
     const { user } = useAuth();
+
     useEffect(() => {
         if (user && user.role !== 'admin' && user.role !== 'cs') {
             navigate('/');
         }
     }, [user]);
+
     useEffect(() => {
         const unsub = onSnapshot(collection(db, 'bookings'), (snap) => {
             setExisting(snap.docs.map(d => d.data()));
@@ -135,13 +177,46 @@ export default function AdminBookingForm() {
     }, []);
 
     const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+    const markTouched = (k) => setTouched(p => ({ ...p, [k]: true }));
 
     const isSesiBooked = (tgl, sesi) => existing.some(b => b.tanggal === tgl && b.sesi == sesi);
 
-    const step1Valid = form.nama.trim() && form.no_hp.trim();
-    const step2Valid = form.tanggal && form.sesi;
+    // ── Validation ──
+    const step1Errors = {
+        nama: !form.nama.trim(),
+        no_hp: !isValidPhone(form.no_hp),
+        alamat: !form.alamat.trim(),
+    };
+    const step1Valid = !Object.values(step1Errors).some(Boolean);
+
+    const step2Errors = {
+        tanggal: !form.tanggal,
+        sesi: !form.sesi,
+    };
+    const step2Valid = !Object.values(step2Errors).some(Boolean);
+
+    const step3Errors = {
+        keterangan: !form.keterangan.trim(),
+    };
+    const step3Valid = !Object.values(step3Errors).some(Boolean);
+
+    const touchAllStep1 = () => setTouched(p => ({ ...p, nama: true, no_hp: true, alamat: true }));
+    const touchAllStep2 = () => setTouched(p => ({ ...p, tanggal: true, sesi: true }));
+    const touchAllStep3 = () => setTouched(p => ({ ...p, keterangan: true }));
+
+    const handleNextFromStep1 = () => {
+        touchAllStep1();
+        if (step1Valid) setStep(2);
+    };
+
+    const handleNextFromStep2 = () => {
+        touchAllStep2();
+        if (step2Valid) setStep(3);
+    };
 
     const handleSubmit = async () => {
+        touchAllStep3();
+        if (!step3Valid) return;
         setLoading(true);
         try {
             await addDoc(collection(db, 'bookings'), {
@@ -153,7 +228,11 @@ export default function AdminBookingForm() {
             setTimeout(() => {
                 setSaved(false);
                 setStep(1);
-                setForm({ nama: '', no_hp: '', maps_lokasi: '', tanggal: '', sesi: '', keterangan: '' });
+                setTouched({});
+                setForm({
+                    nama: '', no_hp: '', alamat: '', maps_lokasi: '',
+                    tanggal: '', sesi: '', keterangan: '',
+                });
             }, 2400);
         } catch (e) {
             console.error(e);
@@ -202,7 +281,7 @@ export default function AdminBookingForm() {
                             <Layers size={20} color={C.primary} />
                         </div>
                         <div>
-                            <div style={S.brand}>Carpetology</div>
+                            <div style={S.brand}>Carpetology ID</div>
                             <div style={S.tagline}>Tambah Booking Home Visit</div>
                         </div>
                     </div>
@@ -224,6 +303,8 @@ export default function AdminBookingForm() {
                                 icon={User}
                                 value={form.nama}
                                 onChange={e => set('nama', e.target.value)}
+                                onBlur={() => markTouched('nama')}
+                                error={touched.nama && step1Errors.nama}
                                 placeholder="Masukkan nama lengkap"
                                 autoFocus
                             />
@@ -232,14 +313,40 @@ export default function AdminBookingForm() {
                                 icon={Phone}
                                 type="tel"
                                 value={form.no_hp}
-                                onChange={e => set('no_hp', e.target.value)}
-                                placeholder="08xxxxxxxxxx"
+                                onChange={e => set('no_hp', e.target.value.replace(/[^\d+\s-]/g, ''))}
+                                onBlur={() => markTouched('no_hp')}
+                                error={touched.no_hp && step1Errors.no_hp}
+                                errorMessage={
+                                    !form.no_hp.trim()
+                                        ? 'Wajib diisi'
+                                        : 'Format nomor HP tidak valid (contoh: 08xxxxxxxxxx)'
+                                }
+                                placeholder="08xxxxxxxxxx atau +62xxxxxxxxxx"
+                                inputMode="tel"
+                                maxLength={16}
+                            />
+                            <TextareaField
+                                label="Alamat"
+                                value={form.alamat}
+                                onChange={e => set('alamat', e.target.value)}
+                                onBlur={() => markTouched('alamat')}
+                                error={touched.alamat && step1Errors.alamat}
+                                placeholder="Alamat lengkap lokasi kunjungan"
+                                rows={2}
+                            />
+                            <Field
+                                label="Link Google Maps"
+                                icon={MapPin}
+                                type="url"
+                                value={form.maps_lokasi}
+                                onChange={e => set('maps_lokasi', e.target.value)}
+                                placeholder="https://maps.google.com/... (opsional)"
+                                required={false}
                             />
                         </div>
                         <button
                             style={{ ...S.btnPrimary, ...(step1Valid ? {} : S.btnDisabled) }}
-                            disabled={!step1Valid}
-                            onClick={() => setStep(2)}
+                            onClick={handleNextFromStep1}
                         >
                             Lanjut ke Jadwal →
                         </button>
@@ -253,20 +360,31 @@ export default function AdminBookingForm() {
                         <div style={S.card}>
                             {/* Date picker */}
                             <div style={{ marginBottom: 18 }}>
-                                <div style={S.fieldLabel}>Tanggal Kunjungan</div>
+                                <div style={S.fieldLabel}>
+                                    Tanggal Kunjungan <span style={{ color: C.danger }}>*</span>
+                                </div>
                                 <div style={{ position: 'relative' }}>
                                     <span style={S.fieldIconBox}><CalendarDays size={15} color={C.muted} /></span>
                                     <input
                                         type="date"
                                         value={form.tanggal}
                                         onChange={e => { set('tanggal', e.target.value); set('sesi', ''); }}
-                                        style={{ ...S.input, paddingLeft: 40 }}
+                                        onBlur={() => markTouched('tanggal')}
+                                        style={{
+                                            ...S.input, paddingLeft: 40,
+                                            borderColor: touched.tanggal && step2Errors.tanggal ? C.danger : C.border,
+                                        }}
                                     />
                                 </div>
+                                {touched.tanggal && step2Errors.tanggal && (
+                                    <div style={S.errorText}>Wajib diisi</div>
+                                )}
                             </div>
 
                             {/* Sesi picker */}
-                            <div style={S.fieldLabel}>Pilih Sesi</div>
+                            <div style={S.fieldLabel}>
+                                Pilih Sesi <span style={{ color: C.danger }}>*</span>
+                            </div>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                                 {SESI.map(s => {
                                     const booked = isSesiBooked(form.tanggal, s.val);
@@ -278,6 +396,7 @@ export default function AdminBookingForm() {
                                             onClick={() => {
                                                 if (booked) return;
                                                 set('sesi', s.val);
+                                                markTouched('sesi');
                                             }}
                                             style={{
                                                 border: `2px solid ${selected ? C.primary : booked ? '#fecaca' : C.border}`,
@@ -319,6 +438,9 @@ export default function AdminBookingForm() {
                                     );
                                 })}
                             </div>
+                            {touched.sesi && step2Errors.sesi && (
+                                <div style={S.errorText}>Pilih salah satu sesi</div>
+                            )}
 
                             {form.tanggal && (
                                 <div style={{ marginTop: 12, background: C.primary50, border: `1px solid ${C.primary100}`, borderRadius: 10, padding: '10px 14px', fontSize: 12, color: C.primary700, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -331,8 +453,7 @@ export default function AdminBookingForm() {
                             <button style={{ ...S.btnSecondary, width: 90 }} onClick={() => setStep(1)}>← Back</button>
                             <button
                                 style={{ ...S.btnPrimary, flex: 1, ...(step2Valid ? {} : S.btnDisabled) }}
-                                disabled={!step2Valid}
-                                onClick={() => setStep(3)}
+                                onClick={handleNextFromStep2}
                             >
                                 Lanjut ke Detail →
                             </button>
@@ -349,13 +470,14 @@ export default function AdminBookingForm() {
                             {[
                                 { label: 'Pelanggan', val: form.nama, Icon: User },
                                 { label: 'WhatsApp', val: form.no_hp, Icon: Phone },
+                                { label: 'Alamat', val: form.alamat, Icon: Home },
                                 { label: 'Tanggal', val: formatTanggal(form.tanggal), Icon: CalendarDays },
                                 { label: 'Sesi', val: form.sesi == 1 ? 'Sesi 1 — 09:00–11:00' : 'Sesi 2 — 13:00–15:00', Icon: Clock },
                             ].map((r, i) => (
                                 <div key={i} style={{
                                     display: 'flex', alignItems: 'flex-start', gap: 12,
                                     padding: '10px 0',
-                                    borderBottom: i < 3 ? `1px solid ${C.border}` : 'none',
+                                    borderBottom: i < 4 ? `1px solid ${C.border}` : 'none',
                                 }}>
                                     <div style={{ width: 32, height: 32, borderRadius: 8, background: C.primary50, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                                         <r.Icon size={14} color={C.primary700} />
@@ -368,28 +490,24 @@ export default function AdminBookingForm() {
                             ))}
                         </div>
 
-                        {/* Extra fields */}
-                        <div style={S.sectionLabel}>Informasi Tambahan</div>
+                        {/* Keterangan / Detail item */}
+                        <div style={S.sectionLabel}>Detail Pekerjaan</div>
                         <div style={{ ...S.card, marginBottom: 14 }}>
-                            <Field
-                                label="Link Google Maps (opsional)"
-                                icon={MapPin}
-                                type="url"
-                                value={form.maps_lokasi}
-                                onChange={e => set('maps_lokasi', e.target.value)}
-                                placeholder="https://maps.google.com/..."
-                            />
                             <TextareaField
-                                label="Keterangan (opsional)"
+                                label="Keterangan"
                                 value={form.keterangan}
                                 onChange={e => set('keterangan', e.target.value)}
+                                onBlur={() => markTouched('keterangan')}
+                                error={touched.keterangan && step3Errors.keterangan}
+                                placeholder="Contoh: Cuci karpet 2 buah ukuran 2x3m, sofa 3 dudukan, kondisi banyak noda kopi..."
+                                rows={4}
                             />
                         </div>
 
                         <div style={{ display: 'flex', gap: 10 }}>
                             <button style={{ ...S.btnSecondary, width: 90 }} onClick={() => setStep(2)}>← Back</button>
                             <button
-                                style={{ ...S.btnPrimary, flex: 1, ...(loading ? S.btnDisabled : {}) }}
+                                style={{ ...S.btnPrimary, flex: 1, ...((loading || !step3Valid) ? S.btnDisabled : {}) }}
                                 disabled={loading}
                                 onClick={handleSubmit}
                             >
@@ -405,7 +523,7 @@ export default function AdminBookingForm() {
                 {/* Footer */}
                 <div style={S.footer}>
                     <Layers size={13} color={C.primary} />
-                    <span style={{ color: C.primary, fontWeight: 700 }}>Carpetology</span>
+                    <span style={{ color: C.primary, fontWeight: 700 }}>Carpetology ID</span>
                     <span style={{ color: C.muted }}>· Jasa Cuci Karpet & Laundry</span>
                 </div>
             </div>
@@ -427,8 +545,6 @@ const S = {
         fontFamily: "'Inter', 'Plus Jakarta Sans', sans-serif",
         paddingBottom: 60,
     },
-
-    // Hero
     hero: {
         background: 'linear-gradient(135deg, #1A2E35 0%, #0d2028 100%)',
         padding: '20px 20px 24px',
@@ -455,8 +571,6 @@ const S = {
         fontSize: 12, fontWeight: 700,
         cursor: 'pointer', fontFamily: 'inherit',
     },
-
-    // Content
     contentWrap: {
         maxWidth: 500, margin: '0 auto',
         padding: '24px 16px 0',
@@ -473,8 +587,6 @@ const S = {
         boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
         border: `1px solid ${C.border}`,
     },
-
-    // Fields
     fieldLabel: {
         fontSize: 11, fontWeight: 700, color: C.muted,
         textTransform: 'uppercase', letterSpacing: '0.5px',
@@ -501,8 +613,9 @@ const S = {
         background: C.white, outline: 'none', resize: 'vertical',
         boxSizing: 'border-box',
     },
-
-    // Buttons
+    errorText: {
+        fontSize: 11, color: C.danger, marginTop: 4, fontWeight: 600,
+    },
     btnPrimary: {
         width: '100%', padding: '14px 20px',
         borderRadius: 12, border: 'none',
@@ -524,7 +637,6 @@ const S = {
     btnDisabled: {
         opacity: 0.4, cursor: 'not-allowed',
     },
-
     footer: {
         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
         padding: '28px 0 8px', fontSize: 12,

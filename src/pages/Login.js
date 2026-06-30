@@ -95,7 +95,7 @@ export default function Login() {
                     <div style={S.logoIcon}>
                         <Layers size={20} color="#04CDCD" />
                     </div>
-                    <span style={S.logoName}>Carpetology</span>
+                    <span style={S.logoName}>Carpetology ID</span>
                 </div>
 
                 {/* Heading */}
@@ -130,7 +130,7 @@ export default function Login() {
                             <input
                                 id="email"
                                 type="email"
-                                placeholder="admin@carpetology.id"
+                                placeholder="email"
                                 value={email}
                                 onChange={e => { setEmail(e.target.value); setError(''); }}
                                 style={S.input}
